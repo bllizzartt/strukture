@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
+import { prisma } from '@/lib/db/prisma';
 import {
   Card,
   CardContent,
@@ -17,11 +18,107 @@ import {
   TrendingUp,
   AlertCircle,
   Plus,
+  CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
 
+async function getDashboardData(userId: string) {
+  // Get properties with units count
+  const properties = await prisma.property.findMany({
+    where: { ownerId: userId },
+    include: {
+      _count: {
+        select: { units: true },
+      },
+      units: {
+        include: {
+          leases: {
+            where: {
+              status: 'ACTIVE',
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const totalProperties = properties.length;
+  const totalUnits = properties.reduce((sum, p) => sum + p._count.units, 0);
+
+  // Calculate occupied units
+  let occupiedUnits = 0;
+  let monthlyRevenue = 0;
+
+  properties.forEach((property) => {
+    property.units.forEach((unit) => {
+      if (unit.leases.length > 0) {
+        occupiedUnits++;
+        monthlyRevenue += Number(unit.monthlyRent);
+      }
+    });
+  });
+
+  const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+
+  // Get active tenants (unique tenants with active leases)
+  const activeLeases = await prisma.lease.findMany({
+    where: {
+      status: 'ACTIVE',
+      unit: {
+        property: {
+          ownerId: userId,
+        },
+      },
+    },
+    select: {
+      tenantId: true,
+    },
+    distinct: ['tenantId'],
+  });
+
+  const activeTenants = activeLeases.length;
+
+  // Get open maintenance requests
+  const openMaintenanceRequests = await prisma.maintenanceRequest.count({
+    where: {
+      unit: {
+        property: {
+          ownerId: userId,
+        },
+      },
+      status: {
+        in: ['SUBMITTED', 'ACKNOWLEDGED', 'IN_PROGRESS'],
+      },
+    },
+  });
+
+  return {
+    totalProperties,
+    totalUnits,
+    activeTenants,
+    occupancyRate,
+    monthlyRevenue,
+    openMaintenanceRequests,
+    hasProperties: totalProperties > 0,
+    hasUnits: totalUnits > 0,
+  };
+}
+
 export default async function LandlordDashboard() {
   const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return null;
+  }
+
+  const data = await getDashboardData(session.user.id);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
+  };
 
   return (
     <div className="space-y-6">
@@ -51,8 +148,8 @@ export default async function LandlordDashboard() {
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">0 units total</p>
+            <div className="text-2xl font-bold">{data.totalProperties}</div>
+            <p className="text-xs text-muted-foreground">{data.totalUnits} units total</p>
           </CardContent>
         </Card>
         <Card>
@@ -61,8 +158,8 @@ export default async function LandlordDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">0% occupancy rate</p>
+            <div className="text-2xl font-bold">{data.activeTenants}</div>
+            <p className="text-xs text-muted-foreground">{data.occupancyRate}% occupancy rate</p>
           </CardContent>
         </Card>
         <Card>
@@ -71,10 +168,16 @@ export default async function LandlordDashboard() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$0.00</div>
+            <div className="text-2xl font-bold">{formatCurrency(data.monthlyRevenue)}</div>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-green-500" />
-              Start adding properties
+              {data.monthlyRevenue > 0 ? (
+                <>
+                  <TrendingUp className="h-3 w-3 text-green-500" />
+                  From active leases
+                </>
+              ) : (
+                'Start adding properties'
+              )}
             </p>
           </CardContent>
         </Card>
@@ -84,7 +187,7 @@ export default async function LandlordDashboard() {
             <Wrench className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{data.openMaintenanceRequests}</div>
             <p className="text-xs text-muted-foreground">Open requests</p>
           </CardContent>
         </Card>
@@ -99,42 +202,50 @@ export default async function LandlordDashboard() {
             <CardDescription>Complete these steps to set up your account</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-4 p-4 rounded-lg border">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                1
+            <div className={`flex items-center gap-4 p-4 rounded-lg border ${data.hasProperties ? 'bg-green-50 border-green-200' : ''}`}>
+              <div className={`flex h-10 w-10 items-center justify-center rounded-full ${data.hasProperties ? 'bg-green-100 text-green-600' : 'bg-primary/10 text-primary'}`}>
+                {data.hasProperties ? <CheckCircle2 className="h-5 w-5" /> : '1'}
               </div>
               <div className="flex-1">
                 <p className="font-medium">Add your first property</p>
                 <p className="text-sm text-muted-foreground">
-                  Start by adding a property to manage
+                  {data.hasProperties ? `${data.totalProperties} properties added` : 'Start by adding a property to manage'}
                 </p>
               </div>
               <Link href="/landlord/properties/new">
-                <Button size="sm">
-                  Add Property
+                <Button size="sm" variant={data.hasProperties ? 'outline' : 'default'}>
+                  {data.hasProperties ? 'Add More' : 'Add Property'}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
             </div>
-            <div className="flex items-center gap-4 p-4 rounded-lg border opacity-50">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                2
+            <div className={`flex items-center gap-4 p-4 rounded-lg border ${data.hasUnits ? 'bg-green-50 border-green-200' : !data.hasProperties ? 'opacity-50' : ''}`}>
+              <div className={`flex h-10 w-10 items-center justify-center rounded-full ${data.hasUnits ? 'bg-green-100 text-green-600' : 'bg-muted text-muted-foreground'}`}>
+                {data.hasUnits ? <CheckCircle2 className="h-5 w-5" /> : '2'}
               </div>
               <div className="flex-1">
                 <p className="font-medium">Add units to your property</p>
                 <p className="text-sm text-muted-foreground">
-                  Define the rental units available
+                  {data.hasUnits ? `${data.totalUnits} units added` : 'Define the rental units available'}
                 </p>
               </div>
+              {data.hasProperties && (
+                <Link href="/landlord/properties">
+                  <Button size="sm" variant="outline">
+                    View Properties
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              )}
             </div>
-            <div className="flex items-center gap-4 p-4 rounded-lg border opacity-50">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                3
+            <div className={`flex items-center gap-4 p-4 rounded-lg border ${data.activeTenants > 0 ? 'bg-green-50 border-green-200' : !data.hasUnits ? 'opacity-50' : ''}`}>
+              <div className={`flex h-10 w-10 items-center justify-center rounded-full ${data.activeTenants > 0 ? 'bg-green-100 text-green-600' : 'bg-muted text-muted-foreground'}`}>
+                {data.activeTenants > 0 ? <CheckCircle2 className="h-5 w-5" /> : '3'}
               </div>
               <div className="flex-1">
                 <p className="font-medium">Onboard your first tenant</p>
                 <p className="text-sm text-muted-foreground">
-                  Send an invite to start the onboarding process
+                  {data.activeTenants > 0 ? `${data.activeTenants} active tenants` : 'Send an invite to start the onboarding process'}
                 </p>
               </div>
             </div>
@@ -162,14 +273,14 @@ export default async function LandlordDashboard() {
       {/* Quick Links */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="cursor-pointer hover:shadow-md transition-shadow">
-          <Link href="/landlord/leases">
+          <Link href="/landlord/properties">
             <CardContent className="flex items-center gap-4 p-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                <Users className="h-6 w-6 text-primary" />
+                <Building2 className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <p className="font-medium">Manage Leases</p>
-                <p className="text-sm text-muted-foreground">View and create leases</p>
+                <p className="font-medium">My Properties</p>
+                <p className="text-sm text-muted-foreground">{data.totalProperties} properties, {data.totalUnits} units</p>
               </div>
             </CardContent>
           </Link>
@@ -195,7 +306,7 @@ export default async function LandlordDashboard() {
               </div>
               <div>
                 <p className="font-medium">Maintenance</p>
-                <p className="text-sm text-muted-foreground">Handle repair requests</p>
+                <p className="text-sm text-muted-foreground">{data.openMaintenanceRequests} open requests</p>
               </div>
             </CardContent>
           </Link>
