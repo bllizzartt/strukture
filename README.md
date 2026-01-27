@@ -1,2 +1,0 @@
-# strukture
-Property management portal
