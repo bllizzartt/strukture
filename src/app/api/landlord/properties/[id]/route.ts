@@ -4,13 +4,13 @@ import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { updatePropertySchema } from '@/lib/validators/property';
 
-interface RouteParams {
-  params: { id: string };
-}
-
 // GET /api/landlord/properties/[id] - Get property details
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const property = await prisma.property.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         units: {
           orderBy: { unitNumber: 'asc' },
@@ -61,8 +61,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT /api/landlord/properties/[id] - Update property
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -74,7 +78,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Check ownership
     const existingProperty = await prisma.property.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!existingProperty) {
@@ -104,7 +108,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { licenseExpiry, ...propertyData } = result.data;
 
     const property = await prisma.property.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...propertyData,
         licenseExpiry: licenseExpiry ? new Date(licenseExpiry) : undefined,
@@ -132,8 +136,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/landlord/properties/[id] - Delete property
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -145,7 +153,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     // Check ownership
     const existingProperty = await prisma.property.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         units: {
           include: {
@@ -190,7 +198,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     // Delete property (cascade will delete units)
     await prisma.property.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     return NextResponse.json({

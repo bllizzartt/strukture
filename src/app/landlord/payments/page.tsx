@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Loader2, Plus, DollarSign, TrendingUp, Clock, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -62,11 +62,7 @@ export default function LandlordPaymentsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       // Fetch payments
       const paymentsResponse = await fetch('/api/landlord/payments');
@@ -93,7 +89,11 @@ export default function LandlordPaymentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const filteredPayments = payments.filter((payment) => {
     if (selectedStatus !== 'all' && payment.status !== selectedStatus) {

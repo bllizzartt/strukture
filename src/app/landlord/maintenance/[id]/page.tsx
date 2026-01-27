@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -114,11 +115,7 @@ export default function MaintenanceDetailPage() {
 
   const requestId = params.id as string;
 
-  useEffect(() => {
-    fetchRequest();
-  }, [requestId]);
-
-  const fetchRequest = async () => {
+  const fetchRequest = useCallback(async () => {
     try {
       const response = await fetch(`/api/landlord/maintenance/${requestId}`);
       const result = await response.json();
@@ -152,7 +149,11 @@ export default function MaintenanceDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [requestId, toast, router]);
+
+  useEffect(() => {
+    fetchRequest();
+  }, [fetchRequest]);
 
   const handleUpdate = async () => {
     setIsUpdating(true);
@@ -339,12 +340,14 @@ export default function MaintenanceDetailPage() {
                   <Label className="text-muted-foreground">Photos</Label>
                   <div className="grid grid-cols-3 gap-2 mt-2">
                     {request.photoUrls.map((url, index) => (
-                      <img
-                        key={index}
-                        src={url}
-                        alt={`Photo ${index + 1}`}
-                        className="rounded-lg object-cover aspect-square"
-                      />
+                      <div key={index} className="relative aspect-square">
+                        <Image
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          fill
+                          className="rounded-lg object-cover"
+                        />
+                      </div>
                     ))}
                   </div>
                 </div>

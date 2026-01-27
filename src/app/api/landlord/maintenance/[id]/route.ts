@@ -4,13 +4,13 @@ import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { updateMaintenanceRequestSchema, addMaintenanceUpdateSchema } from '@/lib/validators/maintenance';
 
-interface RouteParams {
-  params: { id: string };
-}
-
 // GET /api/landlord/maintenance/[id] - Get a specific maintenance request
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const maintenanceRequest = await prisma.maintenanceRequest.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         tenant: {
           select: {
@@ -88,8 +88,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT /api/landlord/maintenance/[id] - Update a maintenance request
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -101,7 +105,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Verify ownership
     const existingRequest = await prisma.maintenanceRequest.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         unit: {
           include: {
@@ -143,7 +147,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Track status change for update log
     const statusChanged = data.status && data.status !== existingRequest.status;
 
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     if (data.status) updateData.status = data.status;
     if (data.priority) updateData.priority = data.priority;
@@ -169,7 +173,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const maintenanceRequest = await prisma.$transaction(async (tx) => {
       // Update the request
       const updated = await tx.maintenanceRequest.update({
-        where: { id: params.id },
+        where: { id },
         data: updateData,
         include: {
           tenant: {
@@ -197,7 +201,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (statusChanged) {
         await tx.maintenanceUpdate.create({
           data: {
-            requestId: params.id,
+            requestId: id,
             previousStatus: existingRequest.status,
             newStatus: data.status!,
             message: `Status changed from ${existingRequest.status} to ${data.status}`,
@@ -227,8 +231,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/landlord/maintenance/[id] - Add an update/comment
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -240,7 +248,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Verify ownership
     const existingRequest = await prisma.maintenanceRequest.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         unit: {
           include: {
@@ -283,7 +291,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Create update
       const newUpdate = await tx.maintenanceUpdate.create({
         data: {
-          requestId: params.id,
+          requestId: id,
           previousStatus: existingRequest.status,
           newStatus: data.newStatus || existingRequest.status,
           message: data.message,
@@ -296,7 +304,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Update status if provided
       if (data.newStatus && data.newStatus !== existingRequest.status) {
         await tx.maintenanceRequest.update({
-          where: { id: params.id },
+          where: { id },
           data: {
             status: data.newStatus,
             ...(data.newStatus === 'ACKNOWLEDGED' && !existingRequest.acknowledgedAt

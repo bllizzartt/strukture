@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -150,11 +150,7 @@ export default function TenantDetailPage() {
 
   const tenantId = params.id as string;
 
-  useEffect(() => {
-    fetchTenant();
-  }, [tenantId]);
-
-  const fetchTenant = async () => {
+  const fetchTenant = useCallback(async () => {
     try {
       const response = await fetch(`/api/landlord/tenants/${tenantId}`);
       const result = await response.json();
@@ -178,7 +174,11 @@ export default function TenantDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tenantId, toast, router]);
+
+  useEffect(() => {
+    fetchTenant();
+  }, [fetchTenant]);
 
   const formatCurrency = (amount: string | number) => {
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;

@@ -4,13 +4,13 @@ import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { createUnitSchema } from '@/lib/validators/property';
 
-interface RouteParams {
-  params: { id: string };
-}
-
 // GET /api/landlord/properties/[id]/units - List all units for a property
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Verify property ownership
     const property = await prisma.property.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!property) {
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const units = await prisma.unit.findMany({
-      where: { propertyId: params.id },
+      where: { propertyId: id },
       include: {
         leases: {
           where: { status: 'ACTIVE' },
@@ -74,8 +74,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/landlord/properties/[id]/units - Create a new unit
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -87,7 +91,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Verify property ownership
     const property = await prisma.property.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!property) {
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const existingUnit = await prisma.unit.findUnique({
       where: {
         propertyId_unitNumber: {
-          propertyId: params.id,
+          propertyId: id,
           unitNumber: result.data.unitNumber,
         },
       },
@@ -134,13 +138,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const unit = await prisma.unit.create({
       data: {
         ...result.data,
-        propertyId: params.id,
+        propertyId: id,
       },
     });
 
     // Update property total units count
     await prisma.property.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         totalUnits: {
           increment: 1,

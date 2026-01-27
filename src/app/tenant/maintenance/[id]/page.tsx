@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Wrench, Clock, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -65,11 +66,7 @@ export default function TenantMaintenanceDetailPage() {
 
   const requestId = params.id as string;
 
-  useEffect(() => {
-    fetchRequest();
-  }, [requestId]);
-
-  const fetchRequest = async () => {
+  const fetchRequest = useCallback(async () => {
     try {
       const response = await fetch(`/api/tenant/maintenance/${requestId}`);
       const result = await response.json();
@@ -93,7 +90,11 @@ export default function TenantMaintenanceDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [requestId, toast, router]);
+
+  useEffect(() => {
+    fetchRequest();
+  }, [fetchRequest]);
 
   if (isLoading) {
     return (
@@ -188,12 +189,14 @@ export default function TenantMaintenanceDetailPage() {
                   <p className="text-sm text-muted-foreground mb-2">Photos</p>
                   <div className="grid grid-cols-3 gap-2">
                     {request.photoUrls.map((url, index) => (
-                      <img
-                        key={index}
-                        src={url}
-                        alt={`Photo ${index + 1}`}
-                        className="rounded-lg object-cover aspect-square"
-                      />
+                      <div key={index} className="relative aspect-square">
+                        <Image
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          fill
+                          className="rounded-lg object-cover"
+                        />
+                      </div>
                     ))}
                   </div>
                 </div>

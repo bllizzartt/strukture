@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import SignatureCanvas from 'react-signature-canvas';
 import { Loader2, Check, AlertCircle, Eraser } from 'lucide-react';
@@ -37,13 +37,7 @@ export function ReviewSignStep() {
   const [hasSignature, setHasSignature] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<AvailableUnit | null>(null);
 
-  useEffect(() => {
-    if (data.unitId) {
-      fetchUnit();
-    }
-  }, [data.unitId]);
-
-  const fetchUnit = async () => {
+  const fetchUnit = useCallback(async () => {
     try {
       const response = await fetch('/api/onboarding/available-units');
       const result = await response.json();
@@ -54,7 +48,13 @@ export function ReviewSignStep() {
     } catch (error) {
       console.error('Error fetching unit:', error);
     }
-  };
+  }, [data.unitId]);
+
+  useEffect(() => {
+    if (data.unitId) {
+      fetchUnit();
+    }
+  }, [data.unitId, fetchUnit]);
 
   const handleClearSignature = () => {
     signatureRef.current?.clear();
