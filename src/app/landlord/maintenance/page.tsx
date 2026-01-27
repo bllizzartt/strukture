@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Loader2, Wrench, AlertTriangle, Clock, CheckCircle, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -72,11 +72,7 @@ export default function LandlordMaintenancePage() {
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
 
-  useEffect(() => {
-    fetchRequests();
-  }, []);
-
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     try {
       const response = await fetch('/api/landlord/maintenance');
       const result = await response.json();
@@ -102,7 +98,11 @@ export default function LandlordMaintenancePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
 
   const filteredRequests = requests.filter((request) => {
     if (selectedStatus !== 'all' && request.status !== selectedStatus) {

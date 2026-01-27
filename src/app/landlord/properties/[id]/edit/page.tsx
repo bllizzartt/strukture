@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -18,11 +18,7 @@ export default function EditPropertyPage() {
 
   const propertyId = params.id as string;
 
-  useEffect(() => {
-    fetchProperty();
-  }, [propertyId]);
-
-  const fetchProperty = async () => {
+  const fetchProperty = useCallback(async () => {
     try {
       const response = await fetch(`/api/landlord/properties/${propertyId}`);
       const result = await response.json();
@@ -46,7 +42,11 @@ export default function EditPropertyPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [propertyId, toast, router]);
+
+  useEffect(() => {
+    fetchProperty();
+  }, [fetchProperty]);
 
   if (isLoading) {
     return (

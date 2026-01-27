@@ -4,10 +4,6 @@ import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { updateUnitSchema } from '@/lib/validators/property';
 
-interface RouteParams {
-  params: { id: string; unitId: string };
-}
-
 // Helper to verify ownership
 async function verifyOwnership(propertyId: string, userId: string, role: string) {
   const property = await prisma.property.findUnique({
@@ -26,8 +22,12 @@ async function verifyOwnership(propertyId: string, userId: string, role: string)
 }
 
 // GET /api/landlord/properties/[id]/units/[unitId] - Get unit details
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; unitId: string }> }
+) {
   try {
+    const { id, unitId } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const ownership = await verifyOwnership(params.id, session.user.id, session.user.role);
+    const ownership = await verifyOwnership(id, session.user.id, session.user.role);
     if ('error' in ownership) {
       return NextResponse.json(
         { success: false, error: ownership.error },
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const unit = await prisma.unit.findUnique({
-      where: { id: params.unitId },
+      where: { id: unitId },
       include: {
         property: {
           select: {
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (unit.propertyId !== params.id) {
+    if (unit.propertyId !== id) {
       return NextResponse.json(
         { success: false, error: 'Unit does not belong to this property' },
         { status: 400 }
@@ -107,8 +107,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT /api/landlord/properties/[id]/units/[unitId] - Update unit
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; unitId: string }> }
+) {
   try {
+    const { id, unitId } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -118,7 +122,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const ownership = await verifyOwnership(params.id, session.user.id, session.user.role);
+    const ownership = await verifyOwnership(id, session.user.id, session.user.role);
     if ('error' in ownership) {
       return NextResponse.json(
         { success: false, error: ownership.error },
@@ -127,7 +131,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const existingUnit = await prisma.unit.findUnique({
-      where: { id: params.unitId },
+      where: { id: unitId },
     });
 
     if (!existingUnit) {
@@ -137,7 +141,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (existingUnit.propertyId !== params.id) {
+    if (existingUnit.propertyId !== id) {
       return NextResponse.json(
         { success: false, error: 'Unit does not belong to this property' },
         { status: 400 }
@@ -159,7 +163,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       const duplicateUnit = await prisma.unit.findUnique({
         where: {
           propertyId_unitNumber: {
-            propertyId: params.id,
+            propertyId: id,
             unitNumber: result.data.unitNumber,
           },
         },
@@ -174,7 +178,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const unit = await prisma.unit.update({
-      where: { id: params.unitId },
+      where: { id: unitId },
       data: result.data,
     });
 
@@ -193,8 +197,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/landlord/properties/[id]/units/[unitId] - Delete unit
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; unitId: string }> }
+) {
   try {
+    const { id, unitId } = await params;
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -204,7 +212,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const ownership = await verifyOwnership(params.id, session.user.id, session.user.role);
+    const ownership = await verifyOwnership(id, session.user.id, session.user.role);
     if ('error' in ownership) {
       return NextResponse.json(
         { success: false, error: ownership.error },
@@ -213,7 +221,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const existingUnit = await prisma.unit.findUnique({
-      where: { id: params.unitId },
+      where: { id: unitId },
       include: {
         leases: {
           where: {
@@ -230,7 +238,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (existingUnit.propertyId !== params.id) {
+    if (existingUnit.propertyId !== id) {
       return NextResponse.json(
         { success: false, error: 'Unit does not belong to this property' },
         { status: 400 }
@@ -249,12 +257,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     await prisma.unit.delete({
-      where: { id: params.unitId },
+      where: { id: unitId },
     });
 
     // Update property total units count
     await prisma.property.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         totalUnits: {
           decrement: 1,

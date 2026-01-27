@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -44,11 +44,7 @@ export default function UnitDetailPage() {
   const propertyId = params.id as string;
   const unitId = params.unitId as string;
 
-  useEffect(() => {
-    fetchUnit();
-  }, [propertyId, unitId]);
-
-  const fetchUnit = async () => {
+  const fetchUnit = useCallback(async () => {
     try {
       const response = await fetch(`/api/landlord/properties/${propertyId}/units/${unitId}`);
       const result = await response.json();
@@ -72,7 +68,11 @@ export default function UnitDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [propertyId, unitId, toast, router]);
+
+  useEffect(() => {
+    fetchUnit();
+  }, [fetchUnit]);
 
   const handleDelete = async () => {
     setIsDeleting(true);
