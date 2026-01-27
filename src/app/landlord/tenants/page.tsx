@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Loader2, Users, Calendar, DollarSign, Mail, Phone, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -97,11 +97,7 @@ export default function LandlordTenantsPage() {
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [tenantsResponse, propertiesResponse] = await Promise.all([
         fetch('/api/landlord/tenants'),
@@ -128,7 +124,11 @@ export default function LandlordTenantsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   // Filter tenants
   const filteredTenants = tenants.filter((t) => {

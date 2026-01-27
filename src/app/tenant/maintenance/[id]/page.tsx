@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Wrench, Clock, Calendar, Building2 } from 'lucide-react';
@@ -65,11 +65,7 @@ export default function TenantMaintenanceDetailPage() {
 
   const requestId = params.id as string;
 
-  useEffect(() => {
-    fetchRequest();
-  }, [requestId]);
-
-  const fetchRequest = async () => {
+  const fetchRequest = useCallback(async () => {
     try {
       const response = await fetch(`/api/tenant/maintenance/${requestId}`);
       const result = await response.json();
@@ -93,7 +89,11 @@ export default function TenantMaintenanceDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [requestId, toast, router]);
+
+  useEffect(() => {
+    fetchRequest();
+  }, [fetchRequest]);
 
   if (isLoading) {
     return (

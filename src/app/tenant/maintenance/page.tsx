@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Loader2, Plus, Wrench, AlertCircle, Clock, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,11 +46,7 @@ export default function TenantMaintenancePage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchRequests();
-  }, []);
-
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     try {
       const response = await fetch('/api/tenant/maintenance');
       const result = await response.json();
@@ -66,7 +62,11 @@ export default function TenantMaintenancePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
 
   const openRequests = requests.filter(
     (r) => !['COMPLETED', 'CANCELLED'].includes(r.status)

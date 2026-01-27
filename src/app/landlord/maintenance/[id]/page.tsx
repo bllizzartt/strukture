@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -114,11 +114,7 @@ export default function MaintenanceDetailPage() {
 
   const requestId = params.id as string;
 
-  useEffect(() => {
-    fetchRequest();
-  }, [requestId]);
-
-  const fetchRequest = async () => {
+  const fetchRequest = useCallback(async () => {
     try {
       const response = await fetch(`/api/landlord/maintenance/${requestId}`);
       const result = await response.json();
@@ -152,7 +148,11 @@ export default function MaintenanceDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [requestId, toast, router]);
+
+  useEffect(() => {
+    fetchRequest();
+  }, [fetchRequest]);
 
   const handleUpdate = async () => {
     setIsUpdating(true);

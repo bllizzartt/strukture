@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { loadStripe } from '@stripe/stripe-js';
@@ -130,11 +130,7 @@ export default function NewPaymentPage() {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
 
-  useEffect(() => {
-    fetchLease();
-  }, []);
-
-  const fetchLease = async () => {
+  const fetchLease = useCallback(async () => {
     try {
       const response = await fetch('/api/tenant/lease');
       const result = await response.json();
@@ -163,7 +159,11 @@ export default function NewPaymentPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast, router]);
+
+  useEffect(() => {
+    fetchLease();
+  }, [fetchLease]);
 
   const getDefaultAmount = () => {
     if (!lease) return 0;

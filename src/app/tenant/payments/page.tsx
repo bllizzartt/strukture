@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { Loader2, Plus, CreditCard, DollarSign, Calendar, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -51,11 +51,7 @@ export default function TenantPaymentsPage() {
   const [activeLease, setActiveLease] = useState<Lease | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       // Fetch payments
       const paymentsResponse = await fetch('/api/tenant/payments');
@@ -79,7 +75,11 @@ export default function TenantPaymentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const getRentDue = () => {
     if (!activeLease) return 0;
