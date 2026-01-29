@@ -32,8 +32,6 @@ export default withAuth(
       }
     }
 
-    // Onboarding routes are public - no protection needed
-
     // Protect admin routes
     if (path.startsWith('/admin')) {
       if (!token || token.role !== 'ADMIN') {
@@ -48,14 +46,13 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const path = req.nextUrl.pathname;
 
-        // Allow public routes
+        // Allow all public routes - be explicit
         if (
           path === '/' ||
           path === '/login' ||
           path === '/register' ||
-          path.startsWith('/api/auth') ||
-          path.startsWith('/onboarding') ||
-          path.startsWith('/api/onboarding')
+          path.startsWith('/api/') ||
+          path.startsWith('/onboarding')
         ) {
           return true;
         }
@@ -64,11 +61,22 @@ export default withAuth(
         return !!token;
       },
     },
+    pages: {
+      signIn: '/login',
+    },
   }
 );
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     * - api routes (handled separately)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|public|api/).*)',
   ],
 };
