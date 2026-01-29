@@ -32,12 +32,7 @@ export default withAuth(
       }
     }
 
-    // Protect onboarding routes
-    if (path.startsWith('/onboarding')) {
-      if (!token) {
-        return NextResponse.redirect(new URL('/login', req.url));
-      }
-    }
+    // Onboarding routes are public - no protection needed
 
     // Protect admin routes
     if (path.startsWith('/admin')) {
@@ -58,7 +53,9 @@ export default withAuth(
           path === '/' ||
           path === '/login' ||
           path === '/register' ||
-          path.startsWith('/api/auth')
+          path.startsWith('/api/auth') ||
+          path.startsWith('/onboarding') ||
+          path.startsWith('/api/onboarding')
         ) {
           return true;
         }
