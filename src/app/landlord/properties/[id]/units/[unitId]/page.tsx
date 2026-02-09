@@ -53,6 +53,7 @@ export default function UnitDetailPage() {
   const [unit, setUnit] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRemovingTenant, setIsRemovingTenant] = useState(false);
   const [isAddTenantOpen, setIsAddTenantOpen] = useState(false);
   const [isCreatingLease, setIsCreatingLease] = useState(false);
   const [leaseForm, setLeaseForm] = useState({
@@ -131,6 +132,40 @@ export default function UnitDetailPage() {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleRemoveTenant = async () => {
+    const lease = unit?.leases?.[0];
+    if (!lease) return;
+    setIsRemovingTenant(true);
+    try {
+      const response = await fetch(`/api/landlord/leases/${lease.id}/terminate`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Tenant Removed',
+          description: 'Lease terminated and unit is now vacant.',
+        });
+        fetchUnit();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to remove tenant',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to remove tenant',
+      });
+    } finally {
+      setIsRemovingTenant(false);
     }
   };
 
@@ -420,13 +455,40 @@ export default function UnitDetailPage() {
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
+                <div className="border-t pt-4 space-y-2">
                   <Link href={`/landlord/leases/${activeLease.id}`}>
                     <Button variant="outline" className="w-full">
                       <FileText className="mr-2 h-4 w-4" />
                       View Lease Details
                     </Button>
                   </Link>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" className="w-full" disabled={isRemovingTenant}>
+                        {isRemovingTenant ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-2 h-4 w-4" />
+                        )}
+                        Remove Tenant
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove Tenant</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will terminate the lease for {activeLease.tenant.firstName} {activeLease.tenant.lastName} and
+                          set the unit back to vacant. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleRemoveTenant} className="bg-destructive text-destructive-foreground">
+                          Remove Tenant
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
             ) : (
