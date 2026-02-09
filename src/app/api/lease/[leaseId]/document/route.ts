@@ -50,10 +50,14 @@ export async function GET(
 
     const pdfBuffer = Buffer.from(base64Match[1], 'base64');
 
+    // Check if download is requested
+    const isDownload = request.nextUrl.searchParams.get('download') === 'true';
+    const disposition = isDownload ? 'attachment' : 'inline';
+
     return new NextResponse(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${document.name}"`,
+        'Content-Disposition': `${disposition}; filename="${document.name}"`,
         'Content-Length': pdfBuffer.length.toString(),
       },
     });

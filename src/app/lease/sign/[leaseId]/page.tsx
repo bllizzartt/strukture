@@ -303,9 +303,20 @@ export default function LeaseSignPage() {
                     title="Lease Document PDF"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Scroll through the document above to review all terms before signing below.
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Scroll through the document above to review all terms before signing below.
+                  </p>
+                  <a
+                    href={`/api/lease/${leaseId}/document?download=true`}
+                    download
+                  >
+                    <Button variant="outline" size="sm">
+                      <FileText className="mr-2 h-4 w-4" />
+                      Download PDF
+                    </Button>
+                  </a>
+                </div>
               </CardContent>
             </Card>
           )}
