@@ -52,7 +52,8 @@ export default withAuth(
           path === '/login' ||
           path === '/register' ||
           path.startsWith('/api/') ||
-          path.startsWith('/onboarding')
+          path.startsWith('/onboarding') ||
+          path.startsWith('/lease/sign')
         ) {
           return true;
         }

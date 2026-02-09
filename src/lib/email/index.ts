@@ -142,6 +142,88 @@ function baseTemplate(content: string): string {
 `;
 }
 
+// ==================== Lease Invite ====================
+
+export interface LeaseInviteData {
+  tenantEmail: string;
+  landlordName: string;
+  propertyName: string;
+  unitNumber: string;
+  propertyAddress: string;
+  monthlyRent: number;
+  depositAmount: number;
+  startDate: string;
+  endDate: string;
+  leaseId: string;
+}
+
+/**
+ * Send lease signing invite to tenant
+ */
+export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const signUrl = `${APP_URL}/lease/sign/${data.leaseId}`;
+
+  const content = `
+    <h2>You've Been Invited to Sign a Lease</h2>
+    <p>Hello,</p>
+    <p>${data.landlordName} has prepared a lease agreement for you at <strong>${data.propertyName}</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName} - Unit ${data.unitNumber}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Monthly Rent:</span>
+        <span class="value">${formatCurrency(data.monthlyRent)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Security Deposit:</span>
+        <span class="value">${formatCurrency(data.depositAmount)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Lease Period:</span>
+        <span class="value">${formatDate(data.startDate)} - ${formatDate(data.endDate)}</span>
+      </div>
+    </div>
+
+    <p>Please click the button below to review the lease agreement and sign electronically.</p>
+
+    <a href="${signUrl}" class="button">Review & Sign Lease</a>
+
+    <div class="highlight">
+      <p><strong>What to expect:</strong></p>
+      <ul>
+        <li>If you don't have an account, you'll be asked to create one</li>
+        <li>Review the full lease agreement with all terms</li>
+        <li>Sign electronically using your mouse or touchscreen</li>
+      </ul>
+    </div>
+
+    <p>If you have questions about the lease terms, please contact ${data.landlordName} directly before signing.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Lease Agreement Ready to Sign - ${data.propertyName} Unit ${data.unitNumber}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send lease invite email:', error);
+    return false;
+  }
+}
+
 // ==================== Email Types ====================
 
 export interface WelcomeEmailData {

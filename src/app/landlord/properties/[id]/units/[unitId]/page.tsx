@@ -15,9 +15,22 @@ import {
   User,
   Calendar,
   FileText,
+  Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +53,21 @@ export default function UnitDetailPage() {
   const [unit, setUnit] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isAddTenantOpen, setIsAddTenantOpen] = useState(false);
+  const [isCreatingLease, setIsCreatingLease] = useState(false);
+  const [leaseForm, setLeaseForm] = useState({
+    tenantEmail: '',
+    startDate: '',
+    endDate: '',
+    monthlyRent: '',
+    depositAmount: '',
+    lateFee: '',
+    gracePeriodDays: '5',
+    rentDueDay: '1',
+    petDeposit: '',
+    petRent: '',
+    additionalTerms: '',
+  });
 
   const propertyId = params.id as string;
   const unitId = params.unitId as string;
@@ -103,6 +131,77 @@ export default function UnitDetailPage() {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Pre-fill rent/deposit from unit when it loads
+  useEffect(() => {
+    if (unit) {
+      const r = typeof unit.monthlyRent === 'string' ? unit.monthlyRent : String(unit.monthlyRent);
+      const d = typeof unit.depositAmount === 'string' ? unit.depositAmount : String(unit.depositAmount);
+      setLeaseForm((prev) => ({
+        ...prev,
+        monthlyRent: r,
+        depositAmount: d,
+      }));
+    }
+  }, [unit]);
+
+  const handleCreateLease = async () => {
+    if (!leaseForm.tenantEmail || !leaseForm.startDate || !leaseForm.endDate) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please fill in tenant email, start date, and end date',
+      });
+      return;
+    }
+
+    setIsCreatingLease(true);
+    try {
+      const response = await fetch('/api/landlord/leases/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unitId,
+          tenantEmail: leaseForm.tenantEmail,
+          startDate: leaseForm.startDate,
+          endDate: leaseForm.endDate,
+          monthlyRent: parseFloat(leaseForm.monthlyRent),
+          depositAmount: parseFloat(leaseForm.depositAmount),
+          lateFee: leaseForm.lateFee ? parseFloat(leaseForm.lateFee) : null,
+          gracePeriodDays: parseInt(leaseForm.gracePeriodDays),
+          rentDueDay: parseInt(leaseForm.rentDueDay),
+          petDeposit: leaseForm.petDeposit ? parseFloat(leaseForm.petDeposit) : null,
+          petRent: leaseForm.petRent ? parseFloat(leaseForm.petRent) : null,
+          additionalTerms: leaseForm.additionalTerms || null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Lease Created',
+          description: `Invite sent to ${leaseForm.tenantEmail}. They'll receive an email to review and sign the lease.`,
+        });
+        setIsAddTenantOpen(false);
+        fetchUnit(); // Refresh the page data
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to create lease',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to create lease',
+      });
+    } finally {
+      setIsCreatingLease(false);
     }
   };
 
@@ -336,9 +435,159 @@ export default function UnitDetailPage() {
                   <User className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <p className="text-muted-foreground mb-4">No active tenant</p>
-                <Button variant="outline">
-                  Add Tenant
-                </Button>
+                <Dialog open={isAddTenantOpen} onOpenChange={setIsAddTenantOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">Add Tenant</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Create Lease & Invite Tenant</DialogTitle>
+                      <DialogDescription>
+                        Set the lease terms below. The tenant will receive an email to review and sign the lease.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div>
+                        <Label htmlFor="tenantEmail">Tenant Email *</Label>
+                        <Input
+                          id="tenantEmail"
+                          type="email"
+                          placeholder="tenant@example.com"
+                          value={leaseForm.tenantEmail}
+                          onChange={(e) => setLeaseForm({ ...leaseForm, tenantEmail: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="startDate">Start Date *</Label>
+                          <Input
+                            id="startDate"
+                            type="date"
+                            value={leaseForm.startDate}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, startDate: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="endDate">End Date *</Label>
+                          <Input
+                            id="endDate"
+                            type="date"
+                            value={leaseForm.endDate}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, endDate: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="monthlyRent">Monthly Rent ($)</Label>
+                          <Input
+                            id="monthlyRent"
+                            type="number"
+                            step="0.01"
+                            value={leaseForm.monthlyRent}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, monthlyRent: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="depositAmount">Security Deposit ($)</Label>
+                          <Input
+                            id="depositAmount"
+                            type="number"
+                            step="0.01"
+                            value={leaseForm.depositAmount}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, depositAmount: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <Label htmlFor="rentDueDay">Rent Due Day</Label>
+                          <Input
+                            id="rentDueDay"
+                            type="number"
+                            min="1"
+                            max="28"
+                            value={leaseForm.rentDueDay}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, rentDueDay: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="gracePeriodDays">Grace Period (days)</Label>
+                          <Input
+                            id="gracePeriodDays"
+                            type="number"
+                            min="0"
+                            value={leaseForm.gracePeriodDays}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, gracePeriodDays: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="lateFee">Late Fee ($)</Label>
+                          <Input
+                            id="lateFee"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={leaseForm.lateFee}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, lateFee: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="petDeposit">Pet Deposit ($)</Label>
+                          <Input
+                            id="petDeposit"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={leaseForm.petDeposit}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, petDeposit: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="petRent">Pet Rent ($/mo)</Label>
+                          <Input
+                            id="petRent"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={leaseForm.petRent}
+                            onChange={(e) => setLeaseForm({ ...leaseForm, petRent: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="additionalTerms">Additional Terms</Label>
+                        <Textarea
+                          id="additionalTerms"
+                          placeholder="Any additional lease terms or conditions..."
+                          rows={3}
+                          value={leaseForm.additionalTerms}
+                          onChange={(e) => setLeaseForm({ ...leaseForm, additionalTerms: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsAddTenantOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateLease} disabled={isCreatingLease}>
+                        {isCreatingLease ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="mr-2 h-4 w-4" />
+                            Create & Send Invite
+                          </>
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             )}
           </CardContent>
