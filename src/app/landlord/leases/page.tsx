@@ -89,6 +89,8 @@ export default function LandlordLeasesPage() {
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [removingLeaseId, setRemovingLeaseId] = useState<string | null>(null);
+  const [deletingLeaseId, setDeletingLeaseId] = useState<string | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -162,6 +164,72 @@ export default function LandlordLeasesPage() {
       setRemovingLeaseId(null);
     }
   };
+
+  const handleDeleteLease = async (leaseId: string) => {
+    setDeletingLeaseId(leaseId);
+    try {
+      const response = await fetch(`/api/landlord/leases/${leaseId}`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Lease Deleted',
+          description: 'Lease record removed.',
+        });
+        fetchData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to delete lease',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete lease',
+      });
+    } finally {
+      setDeletingLeaseId(null);
+    }
+  };
+
+  const handleDeleteAllTerminated = async () => {
+    setIsDeletingAll(true);
+    try {
+      const response = await fetch('/api/landlord/leases/delete-terminated', {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Terminated Leases Deleted',
+          description: result.message,
+        });
+        fetchData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to delete terminated leases',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete terminated leases',
+      });
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
+  const terminatedCount = leases.filter((l) => l.status === 'TERMINATED').length;
 
   // Filter leases
   const filteredLeases = leases.filter((lease) => {
@@ -273,6 +341,38 @@ export default function LandlordLeasesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {terminatedCount > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" disabled={isDeletingAll}>
+                    {isDeletingAll ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Delete All Terminated ({terminatedCount})
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete All Terminated Leases</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete {terminatedCount} terminated lease{terminatedCount !== 1 ? 's' : ''} from
+                      your records. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDeleteAllTerminated}
+                      className="bg-destructive text-destructive-foreground"
+                    >
+                      Delete All
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -385,6 +485,42 @@ export default function LandlordLeasesPage() {
                                 className="bg-destructive text-destructive-foreground"
                               >
                                 Remove Lease
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {(lease.status === 'TERMINATED' || lease.status === 'EXPIRED') && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={deletingLeaseId === lease.id}
+                            >
+                              {deletingLeaseId === lease.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Lease Record</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete the lease record for {lease.tenant.firstName} {lease.tenant.lastName} at{' '}
+                                {lease.unit.property.name} - Unit {lease.unit.unitNumber}.
+                                This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteLease(lease.id)}
+                                className="bg-destructive text-destructive-foreground"
+                              >
+                                Delete
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
