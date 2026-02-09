@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2 } from 'lucide-react';
+import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -253,9 +253,17 @@ export default function LandlordLeasesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Leases</h1>
-        <p className="text-muted-foreground">Manage all your lease agreements</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Leases</h1>
+          <p className="text-muted-foreground">Manage all your lease agreements</p>
+        </div>
+        <Link href="/landlord/leases/create">
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Lease
+          </Button>
+        </Link>
       </div>
 
       {/* Summary Cards */}
