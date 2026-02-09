@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
+import { sendTenantSignedEmail } from '@/lib/email';
 
 // POST /api/lease/[leaseId]/sign - Sign a lease (tenant or landlord)
 export async function POST(
@@ -30,10 +31,18 @@ export async function POST(
     const lease = await prisma.lease.findUnique({
       where: { id: leaseId },
       include: {
-        tenant: { select: { id: true, email: true } },
+        tenant: { select: { id: true, email: true, firstName: true, lastName: true } },
         unit: {
           include: {
-            property: { select: { ownerId: true } },
+            property: {
+              select: {
+                ownerId: true,
+                name: true,
+                owner: {
+                  select: { firstName: true, lastName: true, email: true },
+                },
+              },
+            },
           },
         },
       },
@@ -98,6 +107,18 @@ export async function POST(
         where: { id: lease.tenantId, status: 'PENDING' },
         data: { status: 'ACTIVE' },
       });
+
+      // Notify landlord that tenant has signed
+      if (!shouldActivate) {
+        const tenantName = session.user.name || `${lease.tenant.firstName} ${lease.tenant.lastName}`;
+        await sendTenantSignedEmail(lease.unit.property.owner.email, {
+          landlordName: `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`,
+          tenantName,
+          propertyName: lease.unit.property.name,
+          unitNumber: lease.unit.unitNumber,
+          leaseId,
+        });
+      }
     }
 
     if (isLandlord) {

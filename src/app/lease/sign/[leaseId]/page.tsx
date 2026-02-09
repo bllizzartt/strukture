@@ -17,12 +17,23 @@ import {
   Home,
   Clock,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
+import type { LeaseDocumentData } from '@/components/lease/lease-document';
+
+const PDFDownloadLink = dynamic(
+  () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
+  { ssr: false }
+);
+const LeaseDocumentLazy = dynamic(
+  () => import('@/components/lease/lease-document').then((mod) => ({ default: mod.LeaseDocument })),
+  { ssr: false }
+);
 
 interface LeaseData {
   id: string;
@@ -76,6 +87,8 @@ export default function LeaseSignPage() {
   const [isSigning, setIsSigning] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
+  const [pdfData, setPdfData] = useState<LeaseDocumentData | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
   const leaseId = params.leaseId as string;
 
@@ -100,6 +113,21 @@ export default function LeaseSignPage() {
   useEffect(() => {
     fetchLease();
   }, [fetchLease]);
+
+  const fetchPdfData = async () => {
+    setIsLoadingPdf(true);
+    try {
+      const response = await fetch(`/api/lease/${leaseId}/pdf`);
+      const result = await response.json();
+      if (result.success) {
+        setPdfData(result.data);
+      }
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to load PDF data' });
+    } finally {
+      setIsLoadingPdf(false);
+    }
+  };
 
   const handleClearSignature = () => {
     signatureRef.current?.clear();
@@ -214,9 +242,33 @@ export default function LeaseSignPage() {
 
           {/* Status Banner */}
           {leaseFullySigned && (
-            <div className="flex items-center gap-2 p-4 bg-green-50 rounded-lg border border-green-200">
-              <Check className="h-5 w-5 text-green-600" />
-              <p className="text-green-800 font-medium">This lease has been fully signed and is now active.</p>
+            <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="flex items-center gap-2">
+                <Check className="h-5 w-5 text-green-600" />
+                <p className="text-green-800 font-medium">This lease has been fully signed and is now active.</p>
+              </div>
+              {sessionStatus === 'authenticated' && (
+                <>
+                  {!pdfData ? (
+                    <Button onClick={fetchPdfData} disabled={isLoadingPdf} variant="outline" size="sm">
+                      {isLoadingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                      Download PDF
+                    </Button>
+                  ) : (
+                    <PDFDownloadLink
+                      document={<LeaseDocumentLazy data={pdfData} />}
+                      fileName={`lease-${lease.unit.property.name}-unit-${lease.unit.unitNumber}.pdf`}
+                    >
+                      {({ loading }) => (
+                        <Button variant="outline" size="sm" disabled={loading}>
+                          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                          {loading ? 'Generating...' : 'Download PDF'}
+                        </Button>
+                      )}
+                    </PDFDownloadLink>
+                  )}
+                </>
+              )}
             </div>
           )}
 

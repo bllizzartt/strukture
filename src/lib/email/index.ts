@@ -224,6 +224,54 @@ export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): P
   }
 }
 
+// ==================== Tenant Signed Notification (to Landlord) ====================
+
+export interface TenantSignedData {
+  landlordName: string;
+  tenantName: string;
+  propertyName: string;
+  unitNumber: string;
+  leaseId: string;
+}
+
+/**
+ * Notify landlord that tenant has signed the lease
+ */
+export async function sendTenantSignedEmail(to: string, data: TenantSignedData): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const signUrl = `${APP_URL}/lease/sign/${data.leaseId}`;
+
+  const content = `
+    <h2>Tenant Has Signed the Lease</h2>
+    <p>Dear ${data.landlordName},</p>
+    <p><strong>${data.tenantName}</strong> has signed the lease agreement for <strong>${data.propertyName} - Unit ${data.unitNumber}</strong>.</p>
+
+    <div class="info-box success">
+      <p><strong>Your counter-signature is needed to activate the lease.</strong></p>
+      <p>Please review the lease and add your signature to finalize the agreement.</p>
+    </div>
+
+    <a href="${signUrl}" class="button">Review & Counter-Sign</a>
+
+    <p>Once both signatures are in place, the lease will automatically become active and the unit will be marked as occupied.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Action Required: Counter-Sign Lease - ${data.propertyName} Unit ${data.unitNumber}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send tenant signed notification:', error);
+    return false;
+  }
+}
+
 // ==================== Email Types ====================
 
 export interface WelcomeEmailData {
