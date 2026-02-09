@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, FileText, Calendar, DollarSign, Building2, Users } from 'lucide-react';
+import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
@@ -77,6 +88,7 @@ export default function LandlordLeasesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [removingLeaseId, setRemovingLeaseId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -117,6 +129,38 @@ export default function LandlordLeasesPage() {
       style: 'currency',
       currency: 'USD',
     }).format(num);
+  };
+
+  const handleRemoveLease = async (leaseId: string) => {
+    setRemovingLeaseId(leaseId);
+    try {
+      const response = await fetch(`/api/landlord/leases/${leaseId}/terminate`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Lease Removed',
+          description: 'Lease terminated and unit set to vacant.',
+        });
+        fetchData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to remove lease',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to remove lease',
+      });
+    } finally {
+      setRemovingLeaseId(null);
+    }
   };
 
   // Filter leases
@@ -304,11 +348,49 @@ export default function LandlordLeasesPage() {
                       </div>
                     </div>
 
-                    <Link href={`/landlord/tenants/${lease.tenant.id}`}>
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/landlord/tenants/${lease.tenant.id}`}>
+                        <Button variant="outline" size="sm">
+                          View Details
+                        </Button>
+                      </Link>
+                      {(lease.status === 'ACTIVE' || lease.status === 'PENDING_SIGNATURE') && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={removingLeaseId === lease.id}
+                            >
+                              {removingLeaseId === lease.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remove Lease</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will terminate the lease for {lease.tenant.firstName} {lease.tenant.lastName} at{' '}
+                                {lease.unit.property.name} - Unit {lease.unit.unitNumber} and set the unit back to vacant.
+                                This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleRemoveLease(lease.id)}
+                                className="bg-destructive text-destructive-foreground"
+                              >
+                                Remove Lease
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
                   </div>
                 );
               })}
