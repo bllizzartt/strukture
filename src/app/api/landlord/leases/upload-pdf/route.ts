@@ -37,7 +37,18 @@ export async function POST(request: NextRequest) {
 
     // Extract text from PDF using pdfjs-dist legacy build (works in serverless)
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const doc = await pdfjsLib.getDocument({ data }).promise;
+    // Disable worker for serverless compatibility
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+    const path = await import('path');
+    const standardFontDataUrl = path.join(process.cwd(), 'node_modules/pdfjs-dist/standard_fonts/');
+
+    const doc = await pdfjsLib.getDocument({
+      data,
+      standardFontDataUrl,
+      useSystemFonts: true,
+      isEvalSupported: false,
+      useWorkerFetch: false,
+    }).promise;
     const pageCount = doc.numPages;
 
     let text = '';
@@ -65,8 +76,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error processing PDF:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { success: false, error: 'Failed to process PDF' },
+      { success: false, error: `Failed to process PDF: ${message}` },
       { status: 500 }
     );
   }

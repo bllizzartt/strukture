@@ -2,9 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@react-pdf/renderer'],
-  experimental: {
-    serverComponentsExternalPackages: ['pdfjs-dist'],
-  },
+  serverExternalPackages: ['pdfjs-dist'],
   images: {
     remotePatterns: [
       {
