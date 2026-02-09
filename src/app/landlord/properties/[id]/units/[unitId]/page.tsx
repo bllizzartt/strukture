@@ -136,7 +136,9 @@ export default function UnitDetailPage() {
   };
 
   const handleRemoveTenant = async () => {
-    const lease = unit?.leases?.[0];
+    const lease = unit?.leases?.find(
+      (l: any) => l.status === 'ACTIVE' || l.status === 'PENDING_SIGNATURE'
+    );
     if (!lease) return;
     setIsRemovingTenant(true);
     try {
@@ -261,7 +263,9 @@ export default function UnitDetailPage() {
 
   const rent = typeof unit.monthlyRent === 'string' ? parseFloat(unit.monthlyRent) : unit.monthlyRent;
   const deposit = typeof unit.depositAmount === 'string' ? parseFloat(unit.depositAmount) : unit.depositAmount;
-  const activeLease = unit.leases?.[0];
+  const activeLease = unit.leases?.find(
+    (l: any) => l.status === 'ACTIVE' || l.status === 'PENDING_SIGNATURE'
+  );
 
   return (
     <div className="space-y-6">

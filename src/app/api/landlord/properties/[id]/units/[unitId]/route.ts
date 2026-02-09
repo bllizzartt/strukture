@@ -58,6 +58,9 @@ export async function GET(
           },
         },
         leases: {
+          where: {
+            status: { in: ['ACTIVE', 'PENDING_SIGNATURE'] },
+          },
           orderBy: { createdAt: 'desc' },
           take: 5,
           include: {
