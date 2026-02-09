@@ -30,6 +30,7 @@ export async function POST(
     const lease = await prisma.lease.findUnique({
       where: { id: leaseId },
       include: {
+        tenant: { select: { id: true, email: true } },
         unit: {
           include: {
             property: { select: { ownerId: true } },
@@ -48,8 +49,8 @@ export async function POST(
     const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
     const now = new Date();
 
-    // Determine if this is tenant or landlord signing
-    const isTenant = session.user.id === lease.tenantId;
+    // Determine if this is tenant or landlord signing (match by ID or email)
+    const isTenant = session.user.id === lease.tenantId || session.user.email === lease.tenant.email;
     const isLandlord = session.user.id === lease.unit.property.ownerId;
 
     if (!isTenant && !isLandlord) {
@@ -67,6 +68,9 @@ export async function POST(
         );
       }
 
+      // If tenant matched by email but has a different user ID, update the lease
+      const needsTenantIdUpdate = session.user.id !== lease.tenantId;
+
       // Tenant signs - check if landlord already signed to activate
       const shouldActivate = !!lease.landlordSignedAt;
 
@@ -76,6 +80,7 @@ export async function POST(
           tenantSignature: signature,
           tenantSignedAt: now,
           tenantSignedIp: ip,
+          ...(needsTenantIdUpdate ? { tenantId: session.user.id } : {}),
           ...(shouldActivate ? { status: 'ACTIVE' } : {}),
         },
       });

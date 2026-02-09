@@ -179,7 +179,7 @@ export default function LeaseSignPage() {
 
   // Check if user needs to log in or register
   const needsAuth = sessionStatus !== 'authenticated';
-  const isCurrentUserTenant = session?.user?.id === lease.tenant.id;
+  const isCurrentUserTenant = session?.user?.id === lease.tenant.id || session?.user?.email === lease.tenant.email;
   const isCurrentUserLandlord = session?.user?.email === lease.unit.property.owner.email;
   const canSign = isCurrentUserTenant || isCurrentUserLandlord;
   const alreadySigned = isCurrentUserTenant ? !!lease.tenantSignedAt : isCurrentUserLandlord ? !!lease.landlordSignedAt : false;
