@@ -48,6 +48,7 @@ interface LeaseData {
   petDeposit: string | number | null;
   petRent: string | number | null;
   additionalTerms: string | null;
+  leaseDocumentId: string | null;
   tenantSignedAt: string | null;
   landlordSignedAt: string | null;
   tenant: {
@@ -279,6 +280,34 @@ export default function LeaseSignPage() {
                 You have signed this lease. Waiting for the {isCurrentUserTenant ? 'landlord' : 'tenant'} to sign.
               </p>
             </div>
+          )}
+
+          {/* Uploaded Lease PDF Viewer */}
+          {lease.leaseDocumentId && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Lease Document
+                </CardTitle>
+                <CardDescription>
+                  Review the full lease document below before signing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="border rounded-lg overflow-hidden bg-gray-100">
+                  <iframe
+                    src={`/api/lease/${leaseId}/document`}
+                    className="w-full"
+                    style={{ height: '600px' }}
+                    title="Lease Document PDF"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Scroll through the document above to review all terms before signing below.
+                </p>
+              </CardContent>
+            </Card>
           )}
 
           {/* Parties */}

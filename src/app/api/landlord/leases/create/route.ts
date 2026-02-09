@@ -18,6 +18,7 @@ const createLeaseSchema = z.object({
   petDeposit: z.number().min(0).nullable().optional(),
   petRent: z.number().min(0).nullable().optional(),
   additionalTerms: z.string().nullable().optional(),
+  leaseDocumentId: z.string().nullable().optional(),
 });
 
 // POST /api/landlord/leases/create - Create a lease and send invite to tenant
@@ -122,6 +123,7 @@ export async function POST(request: NextRequest) {
         petDeposit: data.petDeposit ?? null,
         petRent: data.petRent ?? null,
         additionalTerms: data.additionalTerms ?? null,
+        leaseDocumentId: data.leaseDocumentId ?? null,
       },
       include: {
         tenant: { select: { id: true, email: true, firstName: true, lastName: true } },

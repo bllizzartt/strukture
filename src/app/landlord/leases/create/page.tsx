@@ -45,24 +45,6 @@ interface Unit {
   depositAmount: string | number | null;
 }
 
-interface ExtractedData {
-  tenantName: string | null;
-  tenantEmail: string | null;
-  landlordName: string | null;
-  propertyAddress: string | null;
-  monthlyRent: number | null;
-  depositAmount: number | null;
-  startDate: string | null;
-  endDate: string | null;
-  lateFee: number | null;
-  gracePeriodDays: number | null;
-  rentDueDay: number | null;
-  petDeposit: number | null;
-  petRent: number | null;
-  additionalTerms: string | null;
-}
-
-// Steps: 1=method, 2=upload/extract, 3=assign property, 4=review/edit, 5=confirm
 type Step = 1 | 2 | 3 | 4;
 
 export default function CreateLeasePage() {
@@ -75,9 +57,8 @@ export default function CreateLeasePage() {
   // PDF upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
-  const [rawText, setRawText] = useState<string>('');
-  const [pageCount, setPageCount] = useState(0);
+  const [uploadedDocId, setUploadedDocId] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
 
   // Property/unit selection
   const [properties, setProperties] = useState<Property[]>([]);
@@ -102,32 +83,23 @@ export default function CreateLeasePage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch properties with units
   const fetchProperties = useCallback(async () => {
     setIsLoadingProperties(true);
     try {
       const res = await fetch('/api/landlord/properties');
       const result = await res.json();
       if (result.success) {
-        // Fetch units for each property
         const propsWithUnits = await Promise.all(
           result.data.map(async (p: Property) => {
             const unitsRes = await fetch(`/api/landlord/properties/${p.id}/units`);
             const unitsResult = await unitsRes.json();
-            return {
-              ...p,
-              units: unitsResult.success ? unitsResult.data : [],
-            };
+            return { ...p, units: unitsResult.success ? unitsResult.data : [] };
           })
         );
         setProperties(propsWithUnits);
       }
     } catch {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to load properties',
-      });
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to load properties' });
     } finally {
       setIsLoadingProperties(false);
     }
@@ -137,24 +109,17 @@ export default function CreateLeasePage() {
     fetchProperties();
   }, [fetchProperties]);
 
-  // Handle PDF file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
       setSelectedFile(file);
     } else if (file) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid file',
-        description: 'Please select a PDF file',
-      });
+      toast({ variant: 'destructive', title: 'Invalid file', description: 'Please select a PDF file' });
     }
   };
 
-  // Upload and extract PDF
   const handleUpload = async () => {
     if (!selectedFile) return;
-
     setIsUploading(true);
     try {
       const formData = new FormData();
@@ -164,61 +129,28 @@ export default function CreateLeasePage() {
         method: 'POST',
         body: formData,
       });
-
       const result = await res.json();
 
       if (result.success) {
-        setExtractedData(result.data.extracted);
-        setRawText(result.data.rawText);
-        setPageCount(result.data.pageCount);
-
-        // Pre-fill form with extracted data
-        const ext = result.data.extracted as ExtractedData;
-        setForm((prev) => ({
-          ...prev,
-          tenantEmail: ext.tenantEmail || prev.tenantEmail,
-          startDate: ext.startDate || prev.startDate,
-          endDate: ext.endDate || prev.endDate,
-          monthlyRent: ext.monthlyRent?.toString() || prev.monthlyRent,
-          depositAmount: ext.depositAmount?.toString() || prev.depositAmount,
-          lateFee: ext.lateFee?.toString() || prev.lateFee,
-          gracePeriodDays: ext.gracePeriodDays?.toString() || prev.gracePeriodDays,
-          rentDueDay: ext.rentDueDay?.toString() || prev.rentDueDay,
-          petDeposit: ext.petDeposit?.toString() || prev.petDeposit,
-          petRent: ext.petRent?.toString() || prev.petRent,
-        }));
-
-        toast({
-          title: 'PDF Scanned',
-          description: `Extracted data from ${result.data.pageCount} page(s). Please review and edit below.`,
-        });
-
+        setUploadedDocId(result.data.documentId);
+        setUploadedFileName(result.data.fileName);
+        toast({ title: 'PDF Uploaded', description: 'Your lease document has been uploaded.' });
         setStep(3);
       } else {
-        toast({
-          variant: 'destructive',
-          title: 'Upload Failed',
-          description: result.error,
-        });
+        toast({ variant: 'destructive', title: 'Upload Failed', description: result.error });
       }
     } catch {
-      toast({
-        variant: 'destructive',
-        title: 'Upload Failed',
-        description: 'Failed to process the PDF',
-      });
+      toast({ variant: 'destructive', title: 'Upload Failed', description: 'Failed to upload PDF' });
     } finally {
       setIsUploading(false);
     }
   };
 
-  // When unit is selected, pre-fill rent/deposit from unit defaults
   const handleUnitChange = (unitId: string) => {
     setSelectedUnitId(unitId);
     const property = properties.find((p) => p.id === selectedPropertyId);
     const unit = property?.units.find((u) => u.id === unitId);
     if (unit) {
-      // Only pre-fill if form values are empty (don't overwrite extracted data)
       setForm((prev) => ({
         ...prev,
         monthlyRent: prev.monthlyRent || (unit.monthlyRent?.toString() ?? ''),
@@ -227,7 +159,6 @@ export default function CreateLeasePage() {
     }
   };
 
-  // Submit lease
   const handleSubmit = async () => {
     if (!selectedUnitId) {
       toast({ variant: 'destructive', title: 'Error', description: 'Please select a property and unit' });
@@ -264,30 +195,19 @@ export default function CreateLeasePage() {
           petDeposit: form.petDeposit ? parseFloat(form.petDeposit) : null,
           petRent: form.petRent ? parseFloat(form.petRent) : null,
           additionalTerms: form.additionalTerms || null,
+          leaseDocumentId: uploadedDocId || null,
         }),
       });
 
       const result = await res.json();
-
       if (result.success) {
-        toast({
-          title: 'Lease Created',
-          description: 'Lease created and invite sent to tenant.',
-        });
+        toast({ title: 'Lease Created', description: 'Lease created and invite sent to tenant.' });
         router.push('/landlord/leases');
       } else {
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: result.error || 'Failed to create lease',
-        });
+        toast({ variant: 'destructive', title: 'Error', description: result.error || 'Failed to create lease' });
       }
     } catch {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to create lease',
-      });
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to create lease' });
     } finally {
       setIsSubmitting(false);
     }
@@ -320,7 +240,6 @@ export default function CreateLeasePage() {
       {/* Step indicators */}
       <div className="flex items-center gap-2">
         {[1, 2, 3, 4].map((s) => {
-          // Skip step 2 for manual method
           if (method === 'manual' && s === 2) return null;
           return (
             <div key={s} className="flex items-center gap-2">
@@ -356,7 +275,7 @@ export default function CreateLeasePage() {
               <Upload className="h-12 w-12 mx-auto text-primary mb-2" />
               <CardTitle>Upload PDF</CardTitle>
               <CardDescription>
-                Upload an existing lease PDF. We&apos;ll scan it and extract the details so you can review and edit.
+                Upload an existing lease PDF. The tenant will review and sign it digitally.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -393,7 +312,7 @@ export default function CreateLeasePage() {
           <CardHeader>
             <CardTitle>Upload Lease PDF</CardTitle>
             <CardDescription>
-              Upload your lease document and we&apos;ll extract the key information automatically.
+              Upload the lease document. The tenant will be able to review it before signing.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -425,7 +344,7 @@ export default function CreateLeasePage() {
                   size="sm"
                   onClick={() => {
                     setSelectedFile(null);
-                    setExtractedData(null);
+                    setUploadedDocId(null);
                   }}
                 >
                   <X className="h-4 w-4" />
@@ -442,11 +361,11 @@ export default function CreateLeasePage() {
                 {isUploading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Scanning PDF...
+                    Uploading...
                   </>
                 ) : (
                   <>
-                    Scan & Extract
+                    Upload & Continue
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}
@@ -466,21 +385,15 @@ export default function CreateLeasePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Show extraction summary if from PDF */}
-            {extractedData && (
-              <div className="p-4 rounded-lg bg-green-50 border border-green-200 space-y-2">
+            {uploadedDocId && (
+              <div className="p-4 rounded-lg bg-green-50 border border-green-200">
                 <div className="flex items-center gap-2 text-green-700 font-medium">
                   <CheckCircle2 className="h-4 w-4" />
-                  PDF scanned successfully ({pageCount} page{pageCount !== 1 ? 's' : ''})
+                  PDF uploaded: {uploadedFileName}
                 </div>
-                <div className="text-sm text-green-600 space-y-1">
-                  {extractedData.tenantName && <p>Tenant: {extractedData.tenantName}</p>}
-                  {extractedData.monthlyRent && <p>Rent: ${extractedData.monthlyRent}/mo</p>}
-                  {extractedData.propertyAddress && <p>Address found: {extractedData.propertyAddress}</p>}
-                  {!extractedData.tenantName && !extractedData.monthlyRent && (
-                    <p>No specific lease fields detected — you can fill everything in manually on the next step.</p>
-                  )}
-                </div>
+                <p className="text-sm text-green-600 mt-1">
+                  Tenants will review this document before signing.
+                </p>
               </div>
             )}
 
@@ -553,10 +466,7 @@ export default function CreateLeasePage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
-              <Button
-                onClick={() => setStep(4)}
-                disabled={!selectedPropertyId || !selectedUnitId}
-              >
+              <Button onClick={() => setStep(4)} disabled={!selectedPropertyId || !selectedUnitId}>
                 Continue
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -571,30 +481,21 @@ export default function CreateLeasePage() {
           <CardHeader>
             <CardTitle>Review & Edit Lease Details</CardTitle>
             <CardDescription>
-              {method === 'upload'
-                ? 'Review the extracted data and make any edits before finalizing.'
-                : 'Fill in the lease details. An invite will be sent to the tenant.'}
+              Fill in the lease terms. An invite will be sent to the tenant to review
+              {uploadedDocId ? ' the uploaded PDF and' : ''} sign.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Show raw text preview if from PDF */}
-            {rawText && (
-              <details className="group">
-                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground flex items-center gap-1">
-                  <FileText className="h-3 w-3" />
-                  View extracted PDF text
-                </summary>
-                <pre className="mt-2 p-3 rounded-lg bg-muted text-xs max-h-48 overflow-auto whitespace-pre-wrap">
-                  {rawText}
-                </pre>
-              </details>
-            )}
-
             {/* Property/unit summary */}
             <div className="p-3 rounded-lg bg-muted text-sm">
               <span className="font-medium">Assigning to: </span>
               {selectedProperty?.name} — Unit{' '}
               {selectedProperty?.units.find((u) => u.id === selectedUnitId)?.unitNumber}
+              {uploadedDocId && (
+                <span className="ml-2 text-green-600">
+                  <FileText className="h-3 w-3 inline" /> PDF attached
+                </span>
+              )}
             </div>
 
             {/* Tenant Info */}
