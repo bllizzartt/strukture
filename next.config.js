@@ -3,7 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@react-pdf/renderer'],
   experimental: {
-    serverComponentsExternalPackages: ['pdf-parse'],
+    serverComponentsExternalPackages: ['pdfjs-dist'],
   },
   images: {
     remotePatterns: [

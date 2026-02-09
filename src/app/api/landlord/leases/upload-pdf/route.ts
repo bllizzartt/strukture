@@ -33,15 +33,24 @@ export async function POST(request: NextRequest) {
 
     // Read the file buffer
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const data = new Uint8Array(arrayBuffer);
 
-    // Extract text from PDF using pdf-parse
-    const { PDFParse } = await import('pdf-parse');
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    const textResult = await parser.getText();
-    const text = textResult.text;
-    const pageCount = textResult.pages.length;
-    await parser.destroy();
+    // Extract text from PDF using pdfjs-dist legacy build (works in serverless)
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjsLib.getDocument({ data }).promise;
+    const pageCount = doc.numPages;
+
+    let text = '';
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pageText = content.items
+        .map((item: any) => item.str || '')
+        .join(' ');
+      text += pageText + '\n\n';
+    }
+    await doc.destroy();
 
     // Parse the extracted text for common lease fields
     const extracted = parseLeasePdf(text);
