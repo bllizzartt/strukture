@@ -169,3 +169,69 @@ export async function GET(
     );
   }
 }
+
+// DELETE /api/landlord/tenants/[id] - Remove tenant by deleting their inactive leases
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get landlord's properties
+    const properties = await prisma.property.findMany({
+      where: { ownerId: session.user.id },
+      select: { id: true },
+    });
+
+    const propertyIds = properties.map((p) => p.id);
+
+    // Check if tenant has any active leases with this landlord
+    const activeLeases = await prisma.lease.findMany({
+      where: {
+        tenantId: id,
+        status: { in: ['ACTIVE', 'PENDING_SIGNATURE'] },
+        unit: {
+          propertyId: { in: propertyIds },
+        },
+      },
+    });
+
+    if (activeLeases.length > 0) {
+      return NextResponse.json(
+        { success: false, error: 'Cannot remove a tenant with active leases. Terminate the lease first.' },
+        { status: 400 }
+      );
+    }
+
+    // Delete all inactive leases for this tenant at this landlord's properties
+    const result = await prisma.lease.deleteMany({
+      where: {
+        tenantId: id,
+        status: { in: ['TERMINATED', 'EXPIRED', 'DRAFT'] },
+        unit: {
+          propertyId: { in: propertyIds },
+        },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Tenant removed. ${result.count} lease record${result.count !== 1 ? 's' : ''} deleted.`,
+    });
+  } catch (error) {
+    console.error('Error removing tenant:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to remove tenant' },
+      { status: 500 }
+    );
+  }
+}

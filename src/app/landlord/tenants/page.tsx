@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, Users, Calendar, DollarSign, Mail, Phone, Building2 } from 'lucide-react';
+import { Loader2, Users, Calendar, DollarSign, Mail, Phone, Building2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -12,6 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
@@ -96,6 +107,8 @@ export default function LandlordTenantsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [removingTenantId, setRemovingTenantId] = useState<string | null>(null);
+  const [isRemovingAll, setIsRemovingAll] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -154,6 +167,65 @@ export default function LandlordTenantsPage() {
       currency: 'USD',
     }).format(num);
   };
+
+  const handleRemoveTenant = async (tenantId: string) => {
+    setRemovingTenantId(tenantId);
+    try {
+      const response = await fetch(`/api/landlord/tenants/${tenantId}`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Tenant Removed',
+          description: result.message,
+        });
+        fetchData();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to remove tenant',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to remove tenant',
+      });
+    } finally {
+      setRemovingTenantId(null);
+    }
+  };
+
+  const handleRemoveAllInactive = async () => {
+    setIsRemovingAll(true);
+    const inactiveTenants = tenants.filter((t) => !t.activeLease);
+    let removed = 0;
+
+    for (const item of inactiveTenants) {
+      try {
+        const response = await fetch(`/api/landlord/tenants/${item.tenant.id}`, {
+          method: 'DELETE',
+        });
+        const result = await response.json();
+        if (result.success) removed++;
+      } catch (error) {
+        // Continue with next tenant
+      }
+    }
+
+    toast({
+      title: 'Inactive Tenants Removed',
+      description: `${removed} inactive tenant${removed !== 1 ? 's' : ''} removed.`,
+    });
+    fetchData();
+    setIsRemovingAll(false);
+  };
+
+  const inactiveCount = tenants.filter((t) => !t.activeLease).length;
 
   if (isLoading) {
     return (
@@ -252,6 +324,38 @@ export default function LandlordTenantsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {inactiveCount > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" disabled={isRemovingAll}>
+                    {isRemovingAll ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Remove All Inactive ({inactiveCount})
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Remove All Inactive Tenants</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will remove {inactiveCount} inactive tenant{inactiveCount !== 1 ? 's' : ''} and
+                      delete their old lease records. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleRemoveAllInactive}
+                      className="bg-destructive text-destructive-foreground"
+                    >
+                      Remove All
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -353,11 +457,48 @@ export default function LandlordTenantsPage() {
                       )}
                     </div>
 
-                    <Link href={`/landlord/tenants/${item.tenant.id}`}>
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/landlord/tenants/${item.tenant.id}`}>
+                        <Button variant="outline" size="sm">
+                          View Details
+                        </Button>
+                      </Link>
+                      {!item.activeLease && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={removingTenantId === item.tenant.id}
+                            >
+                              {removingTenantId === item.tenant.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remove Tenant</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will remove {item.tenant.firstName} {item.tenant.lastName} and delete their
+                                old lease records. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleRemoveTenant(item.tenant.id)}
+                                className="bg-destructive text-destructive-foreground"
+                              >
+                                Remove
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
                   </div>
                 );
               })}
