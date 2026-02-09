@@ -442,7 +442,7 @@ export default function LeaseSignPage() {
                       You need to create an account or sign in to sign this lease.
                     </p>
                     <div className="flex gap-3 mt-4">
-                      <Link href={`/register?callbackUrl=/lease/sign/${leaseId}`}>
+                      <Link href={`/register?role=TENANT&callbackUrl=/lease/sign/${leaseId}`}>
                         <Button>Create Account</Button>
                       </Link>
                       <Link href={`/login?callbackUrl=/lease/sign/${leaseId}`}>
