@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
           select: { bookings: true },
         },
       },
-      orderBy: { startTime: 'asc' },
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
 
     return NextResponse.json({ success: true, data: slots });
@@ -91,22 +91,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate and create slots
-    const slotData = slots.map((slot: { startTime: string; endTime: string }) => {
-      const start = new Date(slot.startTime);
-      const end = new Date(slot.endTime);
-
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        throw new Error('Invalid date format');
+    const slotData = slots.map((slot: { dayOfWeek: number; startTime: string; endTime: string }) => {
+      if (slot.dayOfWeek < 0 || slot.dayOfWeek > 6) {
+        throw new Error('Day of week must be between 0 (Sunday) and 6 (Saturday)');
       }
 
-      if (end <= start) {
+      if (!slot.startTime || !slot.endTime) {
+        throw new Error('Start time and end time are required');
+      }
+
+      if (slot.endTime <= slot.startTime) {
         throw new Error('End time must be after start time');
       }
 
       return {
         propertyId,
-        startTime: start,
-        endTime: end,
+        dayOfWeek: slot.dayOfWeek,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
       };
     });
 

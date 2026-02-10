@@ -66,7 +66,7 @@ export async function DELETE(
   }
 }
 
-// PUT /api/landlord/viewings/slots/[id] - Toggle slot active state
+// PUT /api/landlord/viewings/slots/[id] - Update a viewing slot
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -108,8 +108,9 @@ export async function PUT(
       where: { id },
       data: {
         ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
-        ...(body.startTime ? { startTime: new Date(body.startTime) } : {}),
-        ...(body.endTime ? { endTime: new Date(body.endTime) } : {}),
+        ...(body.dayOfWeek !== undefined ? { dayOfWeek: body.dayOfWeek } : {}),
+        ...(body.startTime ? { startTime: body.startTime } : {}),
+        ...(body.endTime ? { endTime: body.endTime } : {}),
       },
     });
 

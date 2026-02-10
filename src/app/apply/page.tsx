@@ -100,7 +100,7 @@ export default function ApplyLandingPage() {
   const [viewingSubmitting, setViewingSubmitting] = useState(false);
   const [viewingSubmitted, setViewingSubmitted] = useState(false);
   const [viewingError, setViewingError] = useState<string | null>(null);
-  const [viewingSlots, setViewingSlots] = useState<{ id: string; startTime: string; endTime: string }[]>([]);
+  const [viewingSlots, setViewingSlots] = useState<{ id: string; dayOfWeek: number; startTime: string; endTime: string }[]>([]);
   const [viewingSlotsLoading, setViewingSlotsLoading] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [viewingForm, setViewingForm] = useState({
@@ -195,15 +195,17 @@ export default function ApplyLandingPage() {
     }
   };
 
-  const formatSlotDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  const formatSlotDay = (dayOfWeek: number) => {
+    return DAY_NAMES[dayOfWeek] || '';
   };
 
-  const formatSlotTime = (startStr: string, endStr: string) => {
-    const start = new Date(startStr);
-    const end = new Date(endStr);
-    return `${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  const formatSlotTime = (time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour = h % 12 || 12;
+    return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
   };
 
   useEffect(() => {
@@ -605,15 +607,11 @@ export default function ApplyLandingPage() {
             <div className="text-center py-4">
               <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
               <h3 className="text-lg font-semibold mb-2">
-                {selectedSlotId ? 'Viewing Confirmed!' : 'Viewing Request Submitted!'}
+                Viewing Request Submitted!
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                {selectedSlotId ? (
-                  <>Your viewing for <strong>{viewingProperty?.name}</strong> has been confirmed. You&apos;ll receive a confirmation email shortly.</>
-                ) : (
-                  <>The property manager will contact you to confirm a viewing time for{' '}
-                  <strong>{viewingProperty?.name}</strong>.</>
-                )}
+                The property manager will contact you to confirm a viewing time for{' '}
+                <strong>{viewingProperty?.name}</strong>.
               </p>
               <Button onClick={closeViewingModal}>Close</Button>
             </div>
@@ -706,14 +704,14 @@ export default function ApplyLandingPage() {
                           }`}
                         >
                           <Calendar className="h-4 w-4 text-primary shrink-0" />
-                          <span className="font-medium">{formatSlotDate(slot.startTime)}</span>
+                          <span className="font-medium">{formatSlotDay(slot.dayOfWeek)}</span>
                           <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <span className="text-muted-foreground">{formatSlotTime(slot.startTime, slot.endTime)}</span>
+                          <span className="text-muted-foreground">{formatSlotTime(slot.startTime)} - {formatSlotTime(slot.endTime)}</span>
                         </button>
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Selecting a pre-set time slot will automatically confirm your viewing.
+                      Select a recurring time slot for your preferred viewing day.
                     </p>
                   </div>
                 ) : (
@@ -787,8 +785,6 @@ export default function ApplyLandingPage() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Submitting...
                     </>
-                  ) : selectedSlotId ? (
-                    'Confirm Viewing'
                   ) : (
                     'Request Viewing'
                   )}

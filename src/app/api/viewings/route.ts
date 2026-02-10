@@ -19,14 +19,14 @@ export async function GET(request: NextRequest) {
       where: {
         propertyId,
         isActive: true,
-        startTime: { gte: new Date() },
       },
       select: {
         id: true,
+        dayOfWeek: true,
         startTime: true,
         endTime: true,
       },
-      orderBy: { startTime: 'asc' },
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     });
 
     return NextResponse.json({ success: true, data: slots });
@@ -122,8 +122,7 @@ export async function POST(request: NextRequest) {
       unitNumber = unit?.unitNumber;
     }
 
-    // If a slot was selected, look up the slot's time to use as preferredDate1
-    let slotTime: Date | null = null;
+    // If a slot was selected, verify it exists and is active
     if (slotId) {
       const slot = await prisma.viewingSlot.findFirst({
         where: { id: slotId, propertyId, isActive: true },
@@ -134,7 +133,6 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      slotTime = slot.startTime;
     }
 
     // Create the viewing request
@@ -148,11 +146,11 @@ export async function POST(request: NextRequest) {
         email,
         phone,
         message: message || null,
-        preferredDate1: slotTime || new Date(preferredDate1),
+        preferredDate1: slotId ? new Date() : new Date(preferredDate1),
         preferredDate2: preferredDate2 ? new Date(preferredDate2) : null,
         preferredDate3: preferredDate3 ? new Date(preferredDate3) : null,
-        // Auto-confirm if booked via a slot
-        ...(slotId ? { confirmedDate: slotTime, status: 'CONFIRMED' } : {}),
+        // Slot-based requests still need landlord to confirm a specific date
+        status: 'REQUESTED',
       },
     });
 
