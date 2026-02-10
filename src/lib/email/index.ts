@@ -353,6 +353,15 @@ export interface ApplicationSubmittedData {
   applicationId: string;
 }
 
+export interface ApplicationConfirmationData {
+  applicantName: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  landlordName: string;
+  submittedAt: string;
+}
+
 // ==================== Email Sending Functions ====================
 
 /**
@@ -842,6 +851,74 @@ export async function sendApplicationSubmittedEmail(
     return true;
   } catch (error) {
     console.error('Failed to send application submitted email:', error);
+    return false;
+  }
+}
+
+/**
+ * Send application confirmation email to the applicant
+ */
+export async function sendApplicationConfirmationEmail(
+  to: string,
+  data: ApplicationConfirmationData
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const content = `
+    <h2>Application Received</h2>
+    <p>Dear ${data.applicantName},</p>
+    <p>Thank you for submitting your rental application. We wanted to confirm that your application has been received and is now <strong>being reviewed</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Property Manager:</span>
+        <span class="value">${data.landlordName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Submitted:</span>
+        <span class="value">${formatDate(data.submittedAt)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Status:</span>
+        <span class="value">In Review</span>
+      </div>
+    </div>
+
+    <h3>What happens next?</h3>
+    <ol>
+      <li>The property manager will review your application and uploaded documents</li>
+      <li>A background and credit check may be conducted (you consented to this during the application)</li>
+      <li>You will be contacted via email or phone with the decision</li>
+    </ol>
+
+    <div class="highlight">
+      <p><strong>Please do not submit duplicate applications.</strong> If you need to provide additional documents or update your information, contact the property manager directly.</p>
+    </div>
+
+    <p>If you have any questions about your application status, please reach out to ${data.landlordName}.</p>
+
+    <p>Thank you for your interest,<br>The Strukture Team</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Application Received - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send application confirmation email:', error);
     return false;
   }
 }

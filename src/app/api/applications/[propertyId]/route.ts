@@ -82,6 +82,10 @@ export async function POST(
         id: true,
         name: true,
         ownerId: true,
+        addressLine1: true,
+        city: true,
+        state: true,
+        zipCode: true,
         owner: {
           select: {
             id: true,
@@ -326,6 +330,7 @@ export async function POST(
         applicantEmail: email,
         applicantPhone: phone,
         propertyName: property.name,
+        propertyAddress: `${property.addressLine1}, ${property.city}, ${property.state} ${property.zipCode}`,
         unitNumber,
         monthlyIncome: (formData.get('monthlyIncome') as string) || undefined,
         desiredMoveIn: (formData.get('desiredMoveIn') as string) || undefined,

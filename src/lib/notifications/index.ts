@@ -137,6 +137,7 @@ export interface ApplicationSubmittedNotificationData {
   applicantEmail: string;
   applicantPhone: string;
   propertyName: string;
+  propertyAddress: string;
   unitNumber?: string;
   monthlyIncome?: string;
   desiredMoveIn?: string;
@@ -148,12 +149,22 @@ export interface ApplicationSubmittedNotificationData {
 }
 
 /**
- * Notify landlord when a new rental application is submitted
+ * Notify landlord and applicant when a new rental application is submitted
  */
 export async function notifyApplicationSubmitted(
   data: ApplicationSubmittedNotificationData
 ): Promise<void> {
-  // 1. Send email to landlord
+  // 1. Send confirmation email to the applicant
+  await emailService.sendApplicationConfirmationEmail(data.applicantEmail, {
+    applicantName: data.applicantName,
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    unitNumber: data.unitNumber,
+    landlordName: data.landlordName,
+    submittedAt: new Date().toISOString(),
+  });
+
+  // 2. Send email to landlord
   await emailService.sendApplicationSubmittedEmail(data.landlordEmail, {
     landlordName: data.landlordName,
     applicantName: data.applicantName,
@@ -167,7 +178,7 @@ export async function notifyApplicationSubmitted(
     applicationId: data.applicationId,
   });
 
-  // 2. Send Telegram notification if configured
+  // 3. Send Telegram notification to landlord if configured
   if (data.landlordTelegramId) {
     await telegramService.sendApplicationNotification(data.landlordTelegramId, {
       applicationId: data.applicationId,
@@ -179,7 +190,7 @@ export async function notifyApplicationSubmitted(
     });
   }
 
-  // 3. Create in-app notification
+  // 4. Create in-app notification for landlord
   await createInAppNotification({
     userId: data.landlordId,
     type: 'APPLICATION_SUBMITTED',
