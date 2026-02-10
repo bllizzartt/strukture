@@ -150,6 +150,27 @@ export default function ApplyPage() {
     payStub3: null,
   });
 
+  // Supporting documents (unlimited)
+  const [supportingDocs, setSupportingDocs] = useState<{ file: File; label: string }[]>([]);
+
+  const addSupportingDocs = (newFiles: FileList | null) => {
+    if (!newFiles) return;
+    const additions = Array.from(newFiles)
+      .filter((f) => f.type === 'application/pdf')
+      .map((file) => ({ file, label: file.name.replace(/\.pdf$/i, '') }));
+    setSupportingDocs((prev) => [...prev, ...additions]);
+  };
+
+  const removeSupportingDoc = (index: number) => {
+    setSupportingDocs((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateSupportingDocLabel = (index: number, label: string) => {
+    setSupportingDocs((prev) =>
+      prev.map((doc, i) => (i === index ? { ...doc, label } : doc))
+    );
+  };
+
   useEffect(() => {
     async function fetchProperty() {
       try {
@@ -213,6 +234,13 @@ export default function ApplyPage() {
           formData.append(key, file);
         }
       });
+
+      // Add supporting documents
+      supportingDocs.forEach((doc, index) => {
+        formData.append(`supportingDoc_${index}`, doc.file);
+        formData.append(`supportingDocLabel_${index}`, doc.label);
+      });
+      formData.append('supportingDocCount', String(supportingDocs.length));
 
       const res = await fetch(`/api/applications/${propertyId}`, {
         method: 'POST',
@@ -935,6 +963,62 @@ export default function ApplyPage() {
                     />
                   </div>
                 </div>
+
+                {/* Supporting Documents */}
+                <div className="border-t pt-4">
+                  <h3 className="font-medium mb-1">Supporting Documents</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Upload any additional supporting documents (PDF only, no limit). Examples: Section 8
+                    voucher, veteran disability letter, state disability documentation, unemployment
+                    verification, SSI/SSDI award letter, or any other relevant documents.
+                  </p>
+
+                  {supportingDocs.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                      {supportingDocs.map((doc, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 rounded-lg border p-3"
+                        >
+                          <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                          <Input
+                            className="h-7 text-sm flex-1"
+                            value={doc.label}
+                            onChange={(e) => updateSupportingDocLabel(index, e.target.value)}
+                            placeholder="Document description"
+                          />
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {(doc.file.size / 1024).toFixed(0)} KB
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeSupportingDoc(index)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                    <Upload className="h-4 w-4" />
+                    <span>
+                      {supportingDocs.length > 0 ? 'Add more documents' : 'Click to upload supporting documents'}
+                    </span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf"
+                      multiple
+                      onChange={(e) => {
+                        addSupportingDocs(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
               </CardContent>
             </>
           )}
@@ -976,6 +1060,13 @@ export default function ApplyPage() {
                     <strong>Documents Uploaded:</strong>{' '}
                     {Object.values(files).filter(Boolean).length} of 6
                   </p>
+                  {supportingDocs.length > 0 && (
+                    <p>
+                      <strong>Supporting Documents:</strong> {supportingDocs.length} file
+                      {supportingDocs.length !== 1 ? 's' : ''}
+                      {' '}({supportingDocs.map((d) => d.label).join(', ')})
+                    </p>
+                  )}
                 </div>
 
                 {/* Consent checkboxes */}

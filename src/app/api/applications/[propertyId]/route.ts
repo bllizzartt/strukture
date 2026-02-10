@@ -233,6 +233,37 @@ export async function POST(
       }
     }
 
+    // Handle supporting documents (unlimited PDFs)
+    const supportingDocCount = parseInt(
+      (formData.get('supportingDocCount') as string) || '0',
+      10
+    );
+
+    for (let i = 0; i < supportingDocCount; i++) {
+      const file = formData.get(`supportingDoc_${i}`) as File | null;
+      const label = (formData.get(`supportingDocLabel_${i}`) as string) || `Supporting Document ${i + 1}`;
+
+      if (file && file.size > 0) {
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const dataUrl = `data:${file.type};base64,${base64}`;
+
+        await prisma.document.create({
+          data: {
+            applicationId: application.id,
+            propertyId,
+            type: 'APPLICATION',
+            name: `${label} - ${firstName} ${lastName}`,
+            description: `Supporting document uploaded with rental application: ${label}`,
+            fileUrl: dataUrl,
+            fileKey: `app-${application.id}-supporting-${i}-${Date.now()}`,
+            fileSize: arrayBuffer.byteLength,
+            mimeType: file.type || 'application/pdf',
+          },
+        });
+      }
+    }
+
     // Create audit log
     await prisma.auditLog.create({
       data: {
