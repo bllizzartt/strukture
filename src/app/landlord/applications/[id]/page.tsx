@@ -23,6 +23,8 @@ import {
   Mail,
   Calendar,
   ShieldAlert,
+  Search,
+  ExternalLink,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -306,7 +308,7 @@ export default function ApplicationDetailPage() {
                   label="Date of Birth"
                   value={app.dateOfBirth ? new Date(app.dateOfBirth).toLocaleDateString() : null}
                 />
-                <InfoRow label="SSN (Last 4)" value={app.ssn4 ? `***-**-${app.ssn4}` : null} />
+                <InfoRow label="SSN" value={app.ssn4 ? `***-**-${app.ssn4}` : null} />
               </div>
 
               {app.emergencyContactName && (
@@ -538,6 +540,66 @@ export default function ApplicationDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Screening */}
+          {app.backgroundCheckConsent && app.creditCheckConsent && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Tenant Screening
+                </CardTitle>
+                <CardDescription>
+                  Run background and credit checks through a third-party provider.
+                  The applicant has consented to both checks.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Use one of the services below to screen this applicant. Their full SSN is encrypted on
+                  file and will be provided securely to the screening provider.
+                </p>
+                <div className="space-y-2">
+                  <a
+                    href="https://www.mysmartmove.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">TransUnion SmartMove</p>
+                      <p className="text-xs text-muted-foreground">Credit, criminal, eviction reports</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                  </a>
+                  <a
+                    href="https://www.rentprep.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">RentPrep</p>
+                      <p className="text-xs text-muted-foreground">Background & credit screening</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                  </a>
+                  <a
+                    href="https://certn.co/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">Certn</p>
+                      <p className="text-xs text-muted-foreground">Comprehensive tenant screening</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Review Notes */}
           <Card>

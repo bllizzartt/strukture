@@ -688,7 +688,11 @@ model RentalApplication {
   email                 String
   phone                 String
   dateOfBirth           DateTime?
-  ssn4                  String?             // Last 4 digits only
+  ssn4                  String?             // Last 4 digits for display
+  ssnEncrypted          String?             // Full SSN - AES-256 encrypted
+  dobEncrypted          String?             // Date of birth - AES-256 encrypted
+  phoneEncrypted        String?             // Phone number - AES-256 encrypted
+  emailEncrypted        String?             // Email - AES-256 encrypted
 
   // Current address
   currentAddress        String?

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { encrypt } from '@/lib/encryption';
 
 // GET /api/applications/[propertyId] - Get property info for application (public)
 export async function GET(
@@ -121,7 +122,17 @@ export async function POST(
     // Parse optional fields
     const unitId = formData.get('unitId') as string | null;
     const dateOfBirth = formData.get('dateOfBirth') as string | null;
-    const ssn4 = formData.get('ssn4') as string | null;
+    const ssnRaw = formData.get('ssn') as string | null;
+
+    // Extract last 4 digits and encrypt the full SSN
+    const ssnDigits = ssnRaw ? ssnRaw.replace(/\D/g, '') : null;
+    const ssn4 = ssnDigits && ssnDigits.length >= 4 ? ssnDigits.slice(-4) : null;
+    const ssnEncrypted = ssnDigits && ssnDigits.length === 9 ? encrypt(ssnDigits) : null;
+
+    // Encrypt other sensitive PII
+    const dobEncrypted = dateOfBirth ? encrypt(dateOfBirth) : null;
+    const phoneEncrypted = encrypt(phone);
+    const emailEncrypted = encrypt(email);
 
     // Create the application
     const application = await prisma.rentalApplication.create({
@@ -134,6 +145,10 @@ export async function POST(
         phone,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         ssn4: ssn4 || null,
+        ssnEncrypted: ssnEncrypted || null,
+        dobEncrypted: dobEncrypted || null,
+        phoneEncrypted: phoneEncrypted || null,
+        emailEncrypted: emailEncrypted || null,
 
         // Current address
         currentAddress: (formData.get('currentAddress') as string) || null,
@@ -280,7 +295,14 @@ export async function POST(
         message: 'Application submitted successfully',
         data: { id: application.id },
       },
-      { status: 201 }
+      {
+        status: 201,
+        headers: {
+          'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      }
     );
   } catch (error) {
     console.error('Error submitting application:', error);

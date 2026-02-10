@@ -87,7 +87,7 @@ export default function ApplyPage() {
     email: '',
     phone: '',
     dateOfBirth: '',
-    ssn4: '',
+    ssn: '',
     // Current address
     currentAddress: '',
     currentCity: '',
@@ -451,14 +451,28 @@ export default function ApplyPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="ssn4">Last 4 of SSN</Label>
+                    <Label htmlFor="ssn">Social Security Number *</Label>
                     <Input
-                      id="ssn4"
-                      maxLength={4}
-                      placeholder="XXXX"
-                      value={form.ssn4}
-                      onChange={(e) => updateForm('ssn4', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      id="ssn"
+                      type="password"
+                      maxLength={11}
+                      placeholder="XXX-XX-XXXX"
+                      value={form.ssn}
+                      onChange={(e) => {
+                        // Auto-format with dashes
+                        const raw = e.target.value.replace(/\D/g, '').slice(0, 9);
+                        let formatted = raw;
+                        if (raw.length > 5) {
+                          formatted = `${raw.slice(0, 3)}-${raw.slice(3, 5)}-${raw.slice(5)}`;
+                        } else if (raw.length > 3) {
+                          formatted = `${raw.slice(0, 3)}-${raw.slice(3)}`;
+                        }
+                        updateForm('ssn', formatted);
+                      }}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Required for background and credit checks. Encrypted with AES-256 and never stored in plain text.
+                    </p>
                   </div>
                 </div>
 
@@ -1048,6 +1062,11 @@ export default function ApplyPage() {
                       <strong>Employer:</strong> {form.employer} - {form.jobTitle}
                     </p>
                   )}
+                  {form.ssn && (
+                    <p>
+                      <strong>SSN:</strong> ***-**-{form.ssn.replace(/\D/g, '').slice(-4)}
+                    </p>
+                  )}
                   {form.monthlyIncome && (
                     <p>
                       <strong>Monthly Income:</strong> ${parseFloat(form.monthlyIncome).toLocaleString()}
@@ -1128,6 +1147,8 @@ export default function ApplyPage() {
                 !form.lastName ||
                 !form.email ||
                 !form.phone ||
+                !form.ssn ||
+                form.ssn.replace(/\D/g, '').length !== 9 ||
                 !form.backgroundCheckConsent ||
                 !form.creditCheckConsent
               }
