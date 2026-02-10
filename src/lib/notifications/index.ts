@@ -21,6 +21,7 @@ export type NotificationType =
   | 'MAINTENANCE_UPDATE'
   | 'LEASE_EXPIRING'
   | 'LEASE_SIGNED'
+  | 'APPLICATION_SUBMITTED'
   | 'WELCOME';
 
 // ==================== Maintenance Notifications ====================
@@ -125,6 +126,140 @@ export async function notifyMaintenanceUpdate(
     title: 'Maintenance Request Updated',
     message: `Your maintenance request "${data.title}" has been updated to: ${formatLabel(data.newStatus)}`,
     link: `/tenant/maintenance/${data.requestId}`,
+  });
+}
+
+// ==================== Application Notifications ====================
+
+export interface ApplicationSubmittedNotificationData {
+  applicationId: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  monthlyIncome?: string;
+  desiredMoveIn?: string;
+  numberOfDocuments: number;
+  landlordId: string;
+  landlordEmail: string;
+  landlordName: string;
+  landlordTelegramId?: string | null;
+}
+
+/**
+ * Notify landlord and applicant when a new rental application is submitted
+ */
+export async function notifyApplicationSubmitted(
+  data: ApplicationSubmittedNotificationData
+): Promise<void> {
+  // 1. Send confirmation email to the applicant
+  await emailService.sendApplicationConfirmationEmail(data.applicantEmail, {
+    applicantName: data.applicantName,
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    unitNumber: data.unitNumber,
+    landlordName: data.landlordName,
+    submittedAt: new Date().toISOString(),
+  });
+
+  // 2. Send email to landlord
+  await emailService.sendApplicationSubmittedEmail(data.landlordEmail, {
+    landlordName: data.landlordName,
+    applicantName: data.applicantName,
+    applicantEmail: data.applicantEmail,
+    applicantPhone: data.applicantPhone,
+    propertyName: data.propertyName,
+    unitNumber: data.unitNumber,
+    monthlyIncome: data.monthlyIncome,
+    desiredMoveIn: data.desiredMoveIn,
+    numberOfDocuments: data.numberOfDocuments,
+    applicationId: data.applicationId,
+  });
+
+  // 3. Send Telegram notification to landlord if configured
+  if (data.landlordTelegramId) {
+    await telegramService.sendApplicationNotification(data.landlordTelegramId, {
+      applicationId: data.applicationId,
+      applicantName: data.applicantName,
+      applicantEmail: data.applicantEmail,
+      propertyName: data.propertyName,
+      unitNumber: data.unitNumber,
+      numberOfDocuments: data.numberOfDocuments,
+    });
+  }
+
+  // 4. Create in-app notification for landlord
+  await createInAppNotification({
+    userId: data.landlordId,
+    type: 'APPLICATION_SUBMITTED',
+    title: 'New Rental Application',
+    message: `${data.applicantName} submitted a rental application for ${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}. ${data.numberOfDocuments} document(s) uploaded.`,
+    link: `/landlord/applications/${data.applicationId}`,
+  });
+}
+
+// ==================== Viewing Request Notifications ====================
+
+export interface ViewingRequestNotificationData {
+  viewingId: string;
+  visitorName: string;
+  visitorEmail: string;
+  visitorPhone: string;
+  message?: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  preferredDate1: string;
+  preferredDate2?: string;
+  preferredDate3?: string;
+  landlordId: string;
+  landlordEmail: string;
+  landlordName: string;
+  landlordTelegramId?: string | null;
+}
+
+/**
+ * Notify landlord when a viewing is requested
+ */
+export async function notifyViewingRequested(
+  data: ViewingRequestNotificationData
+): Promise<void> {
+  // 1. Send email to landlord
+  await emailService.sendViewingRequestEmail(data.landlordEmail, {
+    landlordName: data.landlordName,
+    visitorName: data.visitorName,
+    visitorEmail: data.visitorEmail,
+    visitorPhone: data.visitorPhone,
+    message: data.message,
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    unitNumber: data.unitNumber,
+    preferredDate1: data.preferredDate1,
+    preferredDate2: data.preferredDate2,
+    preferredDate3: data.preferredDate3,
+  });
+
+  // 2. Send Telegram notification if configured
+  if (data.landlordTelegramId) {
+    await telegramService.sendViewingNotification(data.landlordTelegramId, {
+      viewingId: data.viewingId,
+      visitorName: data.visitorName,
+      visitorPhone: data.visitorPhone,
+      propertyName: data.propertyName,
+      unitNumber: data.unitNumber,
+      preferredDate1: data.preferredDate1,
+    });
+  }
+
+  // 3. Create in-app notification
+  await createInAppNotification({
+    userId: data.landlordId,
+    type: 'APPLICATION_SUBMITTED',
+    title: 'New Viewing Request',
+    message: `${data.visitorName} wants to schedule a viewing at ${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}.`,
+    link: `/landlord/applications`,
   });
 }
 
@@ -373,6 +508,8 @@ function mapToCategory(type: NotificationType): NotificationCategory {
     case 'LEASE_EXPIRING':
     case 'LEASE_SIGNED':
       return 'LEASE_EXPIRING';
+    case 'APPLICATION_SUBMITTED':
+      return 'GENERAL';
     case 'WELCOME':
     default:
       return 'GENERAL';

@@ -142,6 +142,136 @@ function baseTemplate(content: string): string {
 `;
 }
 
+// ==================== Lease Invite ====================
+
+export interface LeaseInviteData {
+  tenantEmail: string;
+  landlordName: string;
+  propertyName: string;
+  unitNumber: string;
+  propertyAddress: string;
+  monthlyRent: number;
+  depositAmount: number;
+  startDate: string;
+  endDate: string;
+  leaseId: string;
+}
+
+/**
+ * Send lease signing invite to tenant
+ */
+export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const signUrl = `${APP_URL}/lease/sign/${data.leaseId}`;
+
+  const content = `
+    <h2>You've Been Invited to Sign a Lease</h2>
+    <p>Hello,</p>
+    <p>${data.landlordName} has prepared a lease agreement for you at <strong>${data.propertyName}</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName} - Unit ${data.unitNumber}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Monthly Rent:</span>
+        <span class="value">${formatCurrency(data.monthlyRent)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Security Deposit:</span>
+        <span class="value">${formatCurrency(data.depositAmount)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Lease Period:</span>
+        <span class="value">${formatDate(data.startDate)} - ${formatDate(data.endDate)}</span>
+      </div>
+    </div>
+
+    <p>Please click the button below to review the lease agreement and sign electronically.</p>
+
+    <a href="${signUrl}" class="button">Review & Sign Lease</a>
+
+    <div class="highlight">
+      <p><strong>What to expect:</strong></p>
+      <ul>
+        <li>If you don't have an account, you'll be asked to create one</li>
+        <li>Review the full lease agreement with all terms</li>
+        <li>Sign electronically using your mouse or touchscreen</li>
+      </ul>
+    </div>
+
+    <p>If you have questions about the lease terms, please contact ${data.landlordName} directly before signing.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Lease Agreement Ready to Sign - ${data.propertyName} Unit ${data.unitNumber}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send lease invite email:', error);
+    return false;
+  }
+}
+
+// ==================== Tenant Signed Notification (to Landlord) ====================
+
+export interface TenantSignedData {
+  landlordName: string;
+  tenantName: string;
+  propertyName: string;
+  unitNumber: string;
+  leaseId: string;
+}
+
+/**
+ * Notify landlord that tenant has signed the lease
+ */
+export async function sendTenantSignedEmail(to: string, data: TenantSignedData): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const signUrl = `${APP_URL}/lease/sign/${data.leaseId}`;
+
+  const content = `
+    <h2>Tenant Has Signed the Lease</h2>
+    <p>Dear ${data.landlordName},</p>
+    <p><strong>${data.tenantName}</strong> has signed the lease agreement for <strong>${data.propertyName} - Unit ${data.unitNumber}</strong>.</p>
+
+    <div class="info-box success">
+      <p><strong>Your counter-signature is needed to activate the lease.</strong></p>
+      <p>Please review the lease and add your signature to finalize the agreement.</p>
+    </div>
+
+    <a href="${signUrl}" class="button">Review & Counter-Sign</a>
+
+    <p>Once both signatures are in place, the lease will automatically become active and the unit will be marked as occupied.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Action Required: Counter-Sign Lease - ${data.propertyName} Unit ${data.unitNumber}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send tenant signed notification:', error);
+    return false;
+  }
+}
+
 // ==================== Email Types ====================
 
 export interface WelcomeEmailData {
@@ -208,6 +338,42 @@ export interface LeaseExpirationData {
   unitNumber: string;
   expirationDate: string;
   daysRemaining: number;
+}
+
+export interface ApplicationSubmittedData {
+  landlordName: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone: string;
+  propertyName: string;
+  unitNumber?: string;
+  monthlyIncome?: string;
+  desiredMoveIn?: string;
+  numberOfDocuments: number;
+  applicationId: string;
+}
+
+export interface ViewingRequestEmailData {
+  landlordName: string;
+  visitorName: string;
+  visitorEmail: string;
+  visitorPhone: string;
+  message?: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  preferredDate1: string;
+  preferredDate2?: string;
+  preferredDate3?: string;
+}
+
+export interface ApplicationConfirmationData {
+  applicantName: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  landlordName: string;
+  submittedAt: string;
 }
 
 // ==================== Email Sending Functions ====================
@@ -628,6 +794,229 @@ export async function sendLeaseExpirationReminder(
     return true;
   } catch (error) {
     console.error('Failed to send lease expiration reminder:', error);
+    return false;
+  }
+}
+
+/**
+ * Send new rental application notification to landlord
+ */
+export async function sendApplicationSubmittedEmail(
+  to: string,
+  data: ApplicationSubmittedData
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const content = `
+    <h2>New Rental Application Received</h2>
+    <p>Dear ${data.landlordName},</p>
+    <p>A new rental application has been submitted for <strong>${data.propertyName}</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Applicant:</span>
+        <span class="value">${data.applicantName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Email:</span>
+        <span class="value">${data.applicantEmail}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Phone:</span>
+        <span class="value">${data.applicantPhone}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      ${data.monthlyIncome ? `
+      <div class="info-row">
+        <span class="label">Monthly Income:</span>
+        <span class="value">$${parseFloat(data.monthlyIncome).toLocaleString()}</span>
+      </div>
+      ` : ''}
+      ${data.desiredMoveIn ? `
+      <div class="info-row">
+        <span class="label">Desired Move-In:</span>
+        <span class="value">${formatDate(data.desiredMoveIn)}</span>
+      </div>
+      ` : ''}
+      <div class="info-row">
+        <span class="label">Documents Uploaded:</span>
+        <span class="value">${data.numberOfDocuments} file(s)</span>
+      </div>
+    </div>
+
+    <p>Please review the full application, uploaded documents, and consider running a background/credit check.</p>
+
+    <a href="${APP_URL}/landlord/applications/${data.applicationId}" class="button">Review Application</a>
+
+    <p>You can approve, deny, or request additional information from within the portal.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `New Application: ${data.applicantName} - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send application submitted email:', error);
+    return false;
+  }
+}
+
+/**
+ * Send application confirmation email to the applicant
+ */
+export async function sendApplicationConfirmationEmail(
+  to: string,
+  data: ApplicationConfirmationData
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const content = `
+    <h2>Application Received</h2>
+    <p>Dear ${data.applicantName},</p>
+    <p>Thank you for submitting your rental application. We wanted to confirm that your application has been received and is now <strong>being reviewed</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Property Manager:</span>
+        <span class="value">${data.landlordName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Submitted:</span>
+        <span class="value">${formatDate(data.submittedAt)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Status:</span>
+        <span class="value">In Review</span>
+      </div>
+    </div>
+
+    <h3>What happens next?</h3>
+    <ol>
+      <li>The property manager will review your application and uploaded documents</li>
+      <li>A background and credit check may be conducted (you consented to this during the application)</li>
+      <li>You will be contacted via email or phone with the decision</li>
+    </ol>
+
+    <div class="highlight">
+      <p><strong>Please do not submit duplicate applications.</strong> If you need to provide additional documents or update your information, contact the property manager directly.</p>
+    </div>
+
+    <p>If you have any questions about your application status, please reach out to ${data.landlordName}.</p>
+
+    <p>Thank you for your interest,<br>The Strukture Team</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Application Received - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send application confirmation email:', error);
+    return false;
+  }
+}
+
+/**
+ * Send viewing request notification to landlord
+ */
+export async function sendViewingRequestEmail(
+  to: string,
+  data: ViewingRequestEmailData
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const content = `
+    <h2>New Viewing Request</h2>
+    <p>Dear ${data.landlordName},</p>
+    <p>Someone would like to schedule a viewing of <strong>${data.propertyName}</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Name:</span>
+        <span class="value">${data.visitorName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Email:</span>
+        <span class="value">${data.visitorEmail}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Phone:</span>
+        <span class="value">${data.visitorPhone}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+    </div>
+
+    <h3>Preferred Dates</h3>
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">1st Choice:</span>
+        <span class="value">${formatDate(data.preferredDate1)}</span>
+      </div>
+      ${data.preferredDate2 ? `
+      <div class="info-row">
+        <span class="label">2nd Choice:</span>
+        <span class="value">${formatDate(data.preferredDate2)}</span>
+      </div>
+      ` : ''}
+      ${data.preferredDate3 ? `
+      <div class="info-row">
+        <span class="label">3rd Choice:</span>
+        <span class="value">${formatDate(data.preferredDate3)}</span>
+      </div>
+      ` : ''}
+    </div>
+
+    ${data.message ? `
+    <h3>Message from Visitor</h3>
+    <div class="info-box">
+      <p>${data.message}</p>
+    </div>
+    ` : ''}
+
+    <p>Please contact the visitor to confirm a date and time. You can reply directly to their email or call them.</p>
+
+    <a href="mailto:${data.visitorEmail}?subject=Viewing Confirmation - ${encodeURIComponent(data.propertyName)}" class="button">Reply to ${data.visitorName}</a>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Viewing Request: ${data.visitorName} - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send viewing request email:', error);
     return false;
   }
 }

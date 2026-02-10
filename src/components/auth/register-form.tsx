@@ -20,6 +20,7 @@ export function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false);
 
   const defaultRole = searchParams.get('role') as 'TENANT' | 'LANDLORD' | null;
+  const callbackUrl = searchParams.get('callbackUrl');
 
   const {
     register,
@@ -74,8 +75,10 @@ export function RegisterForm() {
         return;
       }
 
-      // Redirect based on role
-      if (data.role === 'LANDLORD') {
+      // Redirect to callbackUrl or role-based dashboard
+      if (callbackUrl) {
+        router.push(callbackUrl);
+      } else if (data.role === 'LANDLORD') {
         router.push('/landlord/dashboard');
       } else {
         router.push('/tenant/dashboard');

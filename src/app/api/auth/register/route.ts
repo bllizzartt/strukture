@@ -23,37 +23,63 @@ export async function POST(request: NextRequest) {
       where: { email: email.toLowerCase() },
     });
 
-    if (existingUser) {
-      return NextResponse.json(
-        { success: false, error: 'An account with this email already exists' },
-        { status: 409 }
-      );
-    }
-
     // Hash password
     const passwordHash = await hash(password, 12);
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        passwordHash,
-        firstName,
-        lastName,
-        role,
-        phone,
-        status: 'ACTIVE', // Auto-activate for now
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        status: true,
-        createdAt: true,
-      },
-    });
+    let user;
+
+    if (existingUser) {
+      // If the existing account is a placeholder (created during lease invite),
+      // upgrade it with the tenant's real info
+      if (existingUser.status === 'PENDING' && existingUser.firstName === 'Pending') {
+        user = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            passwordHash,
+            firstName,
+            lastName,
+            phone,
+            status: 'ACTIVE',
+          },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            status: true,
+            createdAt: true,
+          },
+        });
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'An account with this email already exists' },
+          { status: 409 }
+        );
+      }
+    } else {
+      // Create new user
+      user = await prisma.user.create({
+        data: {
+          email: email.toLowerCase(),
+          passwordHash,
+          firstName,
+          lastName,
+          role,
+          phone,
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+    }
 
     return NextResponse.json(
       {

@@ -15,6 +15,7 @@ import {
   User,
   Calendar,
   FileText,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +41,7 @@ export default function UnitDetailPage() {
   const [unit, setUnit] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRemovingTenant, setIsRemovingTenant] = useState(false);
 
   const propertyId = params.id as string;
   const unitId = params.unitId as string;
@@ -106,6 +108,42 @@ export default function UnitDetailPage() {
     }
   };
 
+  const handleRemoveTenant = async () => {
+    const lease = unit?.leases?.find(
+      (l: any) => l.status === 'ACTIVE' || l.status === 'PENDING_SIGNATURE'
+    );
+    if (!lease) return;
+    setIsRemovingTenant(true);
+    try {
+      const response = await fetch(`/api/landlord/leases/${lease.id}/terminate`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Tenant Removed',
+          description: 'Lease terminated and unit is now vacant.',
+        });
+        fetchUnit();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to remove tenant',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to remove tenant',
+      });
+    } finally {
+      setIsRemovingTenant(false);
+    }
+  };
+
   const statusColors = {
     VACANT: 'bg-green-100 text-green-800',
     OCCUPIED: 'bg-blue-100 text-blue-800',
@@ -127,7 +165,9 @@ export default function UnitDetailPage() {
 
   const rent = typeof unit.monthlyRent === 'string' ? parseFloat(unit.monthlyRent) : unit.monthlyRent;
   const deposit = typeof unit.depositAmount === 'string' ? parseFloat(unit.depositAmount) : unit.depositAmount;
-  const activeLease = unit.leases?.[0];
+  const activeLease = unit.leases?.find(
+    (l: any) => l.status === 'ACTIVE' || l.status === 'PENDING_SIGNATURE'
+  );
 
   return (
     <div className="space-y-6">
@@ -321,13 +361,40 @@ export default function UnitDetailPage() {
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
+                <div className="border-t pt-4 space-y-2">
                   <Link href={`/landlord/leases/${activeLease.id}`}>
                     <Button variant="outline" className="w-full">
                       <FileText className="mr-2 h-4 w-4" />
                       View Lease Details
                     </Button>
                   </Link>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" className="w-full" disabled={isRemovingTenant}>
+                        {isRemovingTenant ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-2 h-4 w-4" />
+                        )}
+                        Remove Tenant
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove Tenant</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will terminate the lease for {activeLease.tenant.firstName} {activeLease.tenant.lastName} and
+                          set the unit back to vacant. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleRemoveTenant} className="bg-destructive text-destructive-foreground">
+                          Remove Tenant
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </div>
             ) : (
@@ -336,9 +403,12 @@ export default function UnitDetailPage() {
                   <User className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <p className="text-muted-foreground mb-4">No active tenant</p>
-                <Button variant="outline">
-                  Add Tenant
-                </Button>
+                <Link href="/landlord/leases/create">
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Lease
+                  </Button>
+                </Link>
               </div>
             )}
           </CardContent>
