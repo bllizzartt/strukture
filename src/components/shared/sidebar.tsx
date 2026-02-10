@@ -18,6 +18,7 @@ import {
   LogOut,
   Menu,
   X,
+  ClipboardList,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,11 @@ const landlordNavItems: NavItem[] = [
     title: 'Leases',
     href: '/landlord/leases',
     icon: <FileText className="h-5 w-5" />,
+  },
+  {
+    title: 'Applications',
+    href: '/landlord/applications',
+    icon: <ClipboardList className="h-5 w-5" />,
   },
   {
     title: 'Payments',

@@ -14,6 +14,8 @@ import {
   Pencil,
   Trash2,
   Loader2,
+  Link2,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +66,7 @@ export default function PropertyDetailPage() {
   const { toast } = useToast();
   const [property, setProperty] = useState<Property | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const propertyId = params.id as string;
 
@@ -219,6 +222,23 @@ export default function PropertyDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              const url = `${window.location.origin}/apply/${propertyId}`;
+              navigator.clipboard.writeText(url);
+              setLinkCopied(true);
+              toast({ title: 'Link Copied', description: 'Application link copied to clipboard' });
+              setTimeout(() => setLinkCopied(false), 2000);
+            }}
+          >
+            {linkCopied ? (
+              <Check className="mr-2 h-4 w-4" />
+            ) : (
+              <Link2 className="mr-2 h-4 w-4" />
+            )}
+            {linkCopied ? 'Copied!' : 'Application Link'}
+          </Button>
           <Link href={`/landlord/properties/${propertyId}/edit`}>
             <Button variant="outline">
               <Pencil className="mr-2 h-4 w-4" />

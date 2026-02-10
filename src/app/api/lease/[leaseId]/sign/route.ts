@@ -59,24 +59,43 @@ export async function POST(
     const now = new Date();
 
     // Determine if this is tenant or landlord signing (match by ID or email)
-    const isTenant = session.user.id === lease.tenantId || session.user.email === lease.tenant.email;
-    const isLandlord = session.user.id === lease.unit.property.ownerId;
+    const matchesTenant = session.user.id === lease.tenantId || session.user.email === lease.tenant.email;
+    const matchesLandlord = session.user.id === lease.unit.property.ownerId;
 
-    if (!isTenant && !isLandlord) {
+    // Determine signing role - prioritize based on what still needs signing
+    // This prevents a user who matches both (e.g., testing) from signing the wrong one
+    let signingAs: 'tenant' | 'landlord' | null = null;
+    if (matchesTenant && !lease.tenantSignedAt) {
+      signingAs = 'tenant';
+    } else if (matchesLandlord && !lease.landlordSignedAt) {
+      signingAs = 'landlord';
+    } else if (matchesTenant && lease.tenantSignedAt) {
+      return NextResponse.json(
+        { success: false, error: 'You have already signed this lease' },
+        { status: 400 }
+      );
+    } else if (matchesLandlord && lease.landlordSignedAt) {
+      return NextResponse.json(
+        { success: false, error: 'You have already signed this lease' },
+        { status: 400 }
+      );
+    }
+
+    // Also check session role as fallback - if user role is TENANT, sign as tenant
+    if (!signingAs && session.user.role === 'TENANT' && !lease.tenantSignedAt) {
+      signingAs = 'tenant';
+    } else if (!signingAs && session.user.role === 'LANDLORD' && !lease.landlordSignedAt) {
+      signingAs = 'landlord';
+    }
+
+    if (!signingAs) {
       return NextResponse.json(
         { success: false, error: 'You are not authorized to sign this lease' },
         { status: 403 }
       );
     }
 
-    if (isTenant) {
-      if (lease.tenantSignedAt) {
-        return NextResponse.json(
-          { success: false, error: 'You have already signed this lease' },
-          { status: 400 }
-        );
-      }
-
+    if (signingAs === 'tenant') {
       // If tenant matched by email but has a different user ID, update the lease
       const needsTenantIdUpdate = session.user.id !== lease.tenantId;
 
@@ -104,7 +123,7 @@ export async function POST(
 
       // Update tenant status to ACTIVE if pending
       await prisma.user.updateMany({
-        where: { id: lease.tenantId, status: 'PENDING' },
+        where: { id: session.user.id, status: 'PENDING' },
         data: { status: 'ACTIVE' },
       });
 
@@ -119,16 +138,7 @@ export async function POST(
           leaseId,
         });
       }
-    }
-
-    if (isLandlord) {
-      if (lease.landlordSignedAt) {
-        return NextResponse.json(
-          { success: false, error: 'You have already signed this lease' },
-          { status: 400 }
-        );
-      }
-
+    } else {
       // Landlord signs - check if tenant already signed to activate
       const shouldActivate = !!lease.tenantSignedAt;
 
@@ -151,6 +161,8 @@ export async function POST(
       }
     }
 
+    const isTenant = signingAs === 'tenant';
+
     // Create audit log
     await prisma.auditLog.create({
       data: {
@@ -164,7 +176,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      message: `Lease signed successfully${isTenant && !lease.landlordSignedAt ? '. Waiting for landlord signature.' : isLandlord && !lease.tenantSignedAt ? '. Waiting for tenant signature.' : '. Lease is now active!'}`,
+      message: `Lease signed successfully${isTenant && !lease.landlordSignedAt ? '. Waiting for landlord signature.' : !isTenant && !lease.tenantSignedAt ? '. Waiting for tenant signature.' : '. Lease is now active!'}`,
     });
   } catch (error) {
     console.error('Error signing lease:', error);

@@ -119,7 +119,16 @@ enum DocumentType {
   PROOF_OF_INCOME
   INSURANCE
   LICENSE
+  APPLICATION
   OTHER
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  DENIED
+  WITHDRAWN
 }
 
 enum NotificationType {
@@ -244,6 +253,7 @@ model Property {
   owner           User           @relation("PropertyOwner", fields: [ownerId], references: [id])
   units           Unit[]
   documents       Document[]
+  applications    RentalApplication[]
 
   @@index([ownerId])
   @@index([status])
@@ -279,6 +289,7 @@ model Unit {
   property        Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   leases          Lease[]
   maintenanceRequests MaintenanceRequest[]
+  applications    RentalApplication[]
 
   @@unique([propertyId, unitNumber])
   @@index([propertyId])
@@ -559,14 +570,18 @@ model Document {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
+  applicationId         String?
+
   // Relations
   user                  User?        @relation(fields: [userId], references: [id])
   property              Property?    @relation(fields: [propertyId], references: [id])
   lease                 Lease?       @relation(fields: [leaseId], references: [id])
+  application           RentalApplication? @relation(fields: [applicationId], references: [id])
 
   @@index([userId])
   @@index([propertyId])
   @@index([leaseId])
+  @@index([applicationId])
   @@index([type])
 }
 
@@ -658,6 +673,100 @@ model AutomationRule {
 
   @@index([triggerType])
   @@index([isActive])
+}
+
+// ============ RENTAL APPLICATIONS ============
+
+model RentalApplication {
+  id                    String              @id @default(cuid())
+  propertyId            String
+  unitId                String?
+
+  // Applicant info
+  firstName             String
+  lastName              String
+  email                 String
+  phone                 String
+  dateOfBirth           DateTime?
+  ssn4                  String?             // Last 4 digits only
+
+  // Current address
+  currentAddress        String?
+  currentCity           String?
+  currentState          String?
+  currentZip            String?
+  monthlyRentCurrent    Decimal?            @db.Decimal(10, 2)
+  lengthAtAddress       String?
+  reasonForLeaving      String?
+
+  // Previous landlord
+  previousLandlordName  String?
+  previousLandlordPhone String?
+  previousLandlordEmail String?
+
+  // Employment
+  employer              String?
+  employerPhone         String?
+  jobTitle              String?
+  monthlyIncome         Decimal?            @db.Decimal(10, 2)
+  employmentLength      String?
+
+  // Additional income
+  additionalIncome      Decimal?            @db.Decimal(10, 2)
+  additionalIncomeSource String?
+
+  // Occupants
+  numberOfOccupants     Int                 @default(1)
+  occupantNames         String?             @db.Text
+  hasPets               Boolean             @default(false)
+  petDetails            String?
+
+  // Vehicles
+  hasVehicles           Boolean             @default(false)
+  vehicleDetails        String?
+
+  // Emergency contact
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  emergencyContactRelation String?
+
+  // Background
+  hasEviction           Boolean             @default(false)
+  evictionDetails       String?
+  hasFelony             Boolean             @default(false)
+  felonyDetails         String?
+  hasBankruptcy         Boolean             @default(false)
+
+  // Desired move-in
+  desiredMoveIn         DateTime?
+  desiredLeaseTerm      String?
+
+  // Consent
+  backgroundCheckConsent Boolean            @default(false)
+  creditCheckConsent    Boolean             @default(false)
+
+  // File uploads (stored as Document references)
+  // W2/income docs, ID front/back, pay stubs are in Documents table
+
+  // Status
+  status                ApplicationStatus   @default(SUBMITTED)
+  reviewNotes           String?             @db.Text
+  reviewedAt            DateTime?
+  reviewedBy            String?
+
+  // Timestamps
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relations
+  property              Property            @relation(fields: [propertyId], references: [id])
+  unit                  Unit?               @relation(fields: [unitId], references: [id])
+  documents             Document[]
+
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([email])
+  @@index([status])
 }
 
 model EmailTemplate {
