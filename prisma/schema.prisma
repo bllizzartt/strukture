@@ -124,6 +124,7 @@ enum DocumentType {
 }
 
 enum ApplicationStatus {
+  PENDING_PAYMENT
   SUBMITTED
   UNDER_REVIEW
   APPROVED
@@ -751,11 +752,18 @@ model RentalApplication {
   backgroundCheckConsent Boolean            @default(false)
   creditCheckConsent    Boolean             @default(false)
 
+  // Screening fee payment
+  screeningFeeAmount    Decimal?            @db.Decimal(10, 2)
+  screeningFeeStatus    String?             // PENDING, PAID, WAIVED
+  screeningFeeMethod    String?             // CARD, WIRE_TRANSFER
+  screeningFeePaymentIntentId String?       @unique
+  screeningFeeWireRef   String?             @unique
+
   // File uploads (stored as Document references)
   // W2/income docs, ID front/back, pay stubs are in Documents table
 
   // Status
-  status                ApplicationStatus   @default(SUBMITTED)
+  status                ApplicationStatus   @default(PENDING_PAYMENT)
   reviewNotes           String?             @db.Text
   reviewedAt            DateTime?
   reviewedBy            String?

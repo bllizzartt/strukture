@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
   Loader2,
@@ -18,6 +18,10 @@ import {
   Eye,
   Calendar,
   Clock,
+  CreditCard,
+  Landmark,
+  Copy,
+  DollarSign,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +36,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { getStripe } from '@/lib/stripe/client';
+
+const SCREENING_FEE = 45;
 
 interface PropertyInfo {
   id: string;
@@ -60,7 +68,7 @@ interface PropertyInfo {
   };
 }
 
-type Step = 'personal' | 'address' | 'employment' | 'occupants' | 'documents' | 'consent';
+type Step = 'personal' | 'address' | 'employment' | 'occupants' | 'documents' | 'consent' | 'payment';
 
 const STEPS: { key: Step; label: string; icon: React.ReactNode }[] = [
   { key: 'personal', label: 'Personal Info', icon: <User className="h-4 w-4" /> },
@@ -69,6 +77,7 @@ const STEPS: { key: Step; label: string; icon: React.ReactNode }[] = [
   { key: 'occupants', label: 'Occupants & Vehicles', icon: <Users className="h-4 w-4" /> },
   { key: 'documents', label: 'Documents', icon: <Upload className="h-4 w-4" /> },
   { key: 'consent', label: 'Review & Submit', icon: <ShieldCheck className="h-4 w-4" /> },
+  { key: 'payment', label: 'Payment', icon: <CreditCard className="h-4 w-4" /> },
 ];
 
 export default function ApplyPage() {
@@ -81,6 +90,14 @@ export default function ApplyPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<Step>('personal');
+
+  // Payment state
+  const [applicationId, setApplicationId] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'WIRE_TRANSFER'>('CARD');
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [wireRef, setWireRef] = useState<string | null>(null);
+  const [wireSubmitted, setWireSubmitted] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -342,7 +359,8 @@ export default function ApplyPage() {
       const result = await res.json();
 
       if (result.success) {
-        setIsSubmitted(true);
+        setApplicationId(result.data.id);
+        setCurrentStep('payment');
       } else {
         setError(result.error || 'Failed to submit application');
       }
@@ -350,6 +368,90 @@ export default function ApplyPage() {
       setError('Failed to submit application. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Initialize Stripe PaymentIntent for card payments
+  const initializeCardPayment = useCallback(async () => {
+    if (!applicationId || clientSecret) return;
+    setPaymentLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/applications/${propertyId}/screening-fee`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setClientSecret(result.data.clientSecret);
+      } else {
+        setError(result.error || 'Failed to initialize payment');
+      }
+    } catch {
+      setError('Failed to initialize payment. Please try again.');
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [applicationId, clientSecret, propertyId]);
+
+  // When switching to CARD payment method and we have an applicationId, initialize payment
+  useEffect(() => {
+    if (currentStep === 'payment' && paymentMethod === 'CARD' && applicationId && !clientSecret) {
+      initializeCardPayment();
+    }
+  }, [currentStep, paymentMethod, applicationId, clientSecret, initializeCardPayment]);
+
+  // Handle successful Stripe payment
+  const handlePaymentSuccess = async () => {
+    setPaymentLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/applications/${propertyId}/confirm-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId, method: 'CARD' }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setIsSubmitted(true);
+      } else {
+        setError(result.error || 'Failed to confirm payment');
+      }
+    } catch {
+      setError('Failed to confirm payment. Please try again.');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  // Handle wire transfer selection
+  const handleWireTransfer = async () => {
+    setPaymentLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/applications/${propertyId}/confirm-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId, method: 'WIRE_TRANSFER' }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setWireRef(result.data.wireRef);
+        setWireSubmitted(true);
+      } else {
+        setError(result.error || 'Failed to process wire transfer request');
+      }
+    } catch {
+      setError('Failed to process request. Please try again.');
+    } finally {
+      setPaymentLoading(false);
     }
   };
 
@@ -383,11 +485,54 @@ export default function ApplyPage() {
             <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
             <h2 className="text-2xl font-semibold mb-2">Application Submitted!</h2>
             <p className="text-muted-foreground mb-4">
-              Thank you for applying to {property?.name}. The property manager will review your
-              application and contact you at <strong>{form.email}</strong>.
+              Thank you for applying to {property?.name}. Your screening fee has been paid.
+              The property manager will review your application and contact you at{' '}
+              <strong>{form.email}</strong>.
             </p>
             <p className="text-sm text-muted-foreground">
               You may close this page.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (wireSubmitted && wireRef) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="max-w-lg w-full mx-4">
+          <CardContent className="pt-6 text-center">
+            <Landmark className="h-16 w-16 text-blue-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-semibold mb-2">Application Received</h2>
+            <p className="text-muted-foreground mb-6">
+              Your application for <strong>{property?.name}</strong> has been received.
+              Please complete the screening fee payment via wire transfer to finalize your application.
+            </p>
+
+            <div className="rounded-lg border bg-muted/50 p-5 text-left space-y-3 mb-6">
+              <h3 className="font-semibold text-center">Wire Transfer Instructions</h3>
+              <div className="space-y-2 text-sm">
+                <p><strong>Amount:</strong> ${SCREENING_FEE}.00</p>
+                <div className="flex items-center justify-between">
+                  <p><strong>Reference Number:</strong> <span className="font-mono text-primary">{wireRef}</span></p>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(wireRef)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="rounded border p-3 bg-background text-xs space-y-1 mt-2">
+                  <p>Include the reference number <strong>{wireRef}</strong> in your wire transfer memo.</p>
+                  <p>The property manager will provide bank account details and confirm receipt of your payment.</p>
+                  <p>Your application will be reviewed once payment is confirmed.</p>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              A confirmation has been sent to <strong>{form.email}</strong>. You may close this page.
             </p>
           </CardContent>
         </Card>
@@ -1446,48 +1591,246 @@ export default function ApplyPage() {
               </CardContent>
             </>
           )}
+
+          {currentStep === 'payment' && (
+            <>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Screening Fee Payment
+                </CardTitle>
+                <CardDescription>
+                  A non-refundable screening fee is required to process your background and credit checks.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Fee Summary */}
+                <div className="rounded-lg bg-muted p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Application Screening Fee</p>
+                    <p className="text-sm text-muted-foreground">
+                      Covers background check and credit report
+                    </p>
+                  </div>
+                  <p className="text-2xl font-bold">${SCREENING_FEE}.00</p>
+                </div>
+
+                {/* Payment Method Selection */}
+                <div className="space-y-3">
+                  <Label>Payment Method</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('CARD')}
+                      className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                        paymentMethod === 'CARD'
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'hover:border-primary/50'
+                      }`}
+                    >
+                      <CreditCard className="h-5 w-5 text-primary shrink-0" />
+                      <div>
+                        <p className="font-medium text-sm">Debit / Credit Card</p>
+                        <p className="text-xs text-muted-foreground">Pay instantly with card</p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('WIRE_TRANSFER')}
+                      className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-colors ${
+                        paymentMethod === 'WIRE_TRANSFER'
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'hover:border-primary/50'
+                      }`}
+                    >
+                      <Landmark className="h-5 w-5 text-primary shrink-0" />
+                      <div>
+                        <p className="font-medium text-sm">Wire Transfer</p>
+                        <p className="text-xs text-muted-foreground">Pay via bank wire</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="bg-destructive/10 text-destructive text-sm rounded-lg p-3">
+                    {error}
+                  </div>
+                )}
+
+                {/* Card Payment */}
+                {paymentMethod === 'CARD' && (
+                  <div className="space-y-4">
+                    {paymentLoading && !clientSecret ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        <span className="ml-2 text-sm text-muted-foreground">
+                          Initializing secure payment...
+                        </span>
+                      </div>
+                    ) : clientSecret ? (
+                      <Elements
+                        stripe={getStripe()}
+                        options={{
+                          clientSecret,
+                          appearance: {
+                            theme: 'stripe',
+                            variables: {
+                              borderRadius: '8px',
+                            },
+                          },
+                        }}
+                      >
+                        <StripeCheckoutForm
+                          onSuccess={handlePaymentSuccess}
+                          amount={SCREENING_FEE}
+                        />
+                      </Elements>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* Wire Transfer */}
+                {paymentMethod === 'WIRE_TRANSFER' && (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border p-4 text-sm space-y-2">
+                      <p>
+                        Choose wire transfer if you prefer to pay via bank wire. After submitting,
+                        you&apos;ll receive a unique reference number and the property manager will provide
+                        bank account details.
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        Your application will be held until payment is confirmed.
+                      </p>
+                    </div>
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={handleWireTransfer}
+                      disabled={paymentLoading}
+                    >
+                      {paymentLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <Landmark className="mr-2 h-4 w-4" />
+                          Submit with Wire Transfer
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </>
+          )}
         </Card>
 
         {/* Navigation */}
-        <div className="flex items-center justify-between">
-          <Button
-            variant="outline"
-            onClick={goPrev}
-            disabled={currentStepIndex === 0}
-          >
-            Previous
-          </Button>
-
-          {currentStep === 'consent' ? (
+        {currentStep !== 'payment' && (
+          <div className="flex items-center justify-between">
             <Button
-              onClick={handleSubmit}
-              disabled={
-                isSubmitting ||
-                !form.firstName ||
-                !form.lastName ||
-                !form.email ||
-                !form.phone ||
-                !form.ssn ||
-                form.ssn.replace(/\D/g, '').length !== 9 ||
-                !form.backgroundCheckConsent ||
-                !form.creditCheckConsent
-              }
+              variant="outline"
+              onClick={goPrev}
+              disabled={currentStepIndex === 0}
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                'Submit Application'
-              )}
+              Previous
             </Button>
-          ) : (
-            <Button onClick={goNext}>Next</Button>
-          )}
-        </div>
+
+            {currentStep === 'consent' ? (
+              <Button
+                onClick={handleSubmit}
+                disabled={
+                  isSubmitting ||
+                  !form.firstName ||
+                  !form.lastName ||
+                  !form.email ||
+                  !form.phone ||
+                  !form.ssn ||
+                  form.ssn.replace(/\D/g, '').length !== 9 ||
+                  !form.backgroundCheckConsent ||
+                  !form.creditCheckConsent
+                }
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving Application...
+                  </>
+                ) : (
+                  'Continue to Payment'
+                )}
+              </Button>
+            ) : (
+              <Button onClick={goNext}>Next</Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function StripeCheckoutForm({
+  onSuccess,
+  amount,
+}: {
+  onSuccess: () => void;
+  amount: number;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+
+    setProcessing(true);
+    setError(null);
+
+    const result = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required',
+    });
+
+    if (result.error) {
+      setError(result.error.message || 'Payment failed. Please try again.');
+      setProcessing(false);
+    } else if (result.paymentIntent?.status === 'succeeded') {
+      onSuccess();
+    } else {
+      setError('Payment was not completed. Please try again.');
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      {error && (
+        <div className="bg-destructive/10 text-destructive text-sm rounded-lg p-3">
+          {error}
+        </div>
+      )}
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={!stripe || processing}
+      >
+        {processing ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Processing Payment...
+          </>
+        ) : (
+          `Pay $${amount}.00`
+        )}
+      </Button>
+    </form>
   );
 }
 
