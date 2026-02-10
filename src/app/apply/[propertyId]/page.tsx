@@ -15,6 +15,8 @@ import {
   Upload,
   X,
   MapPin,
+  Eye,
+  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -169,6 +171,56 @@ export default function ApplyPage() {
     setSupportingDocs((prev) =>
       prev.map((doc, i) => (i === index ? { ...doc, label } : doc))
     );
+  };
+
+  // Viewing request state
+  const [showViewingForm, setShowViewingForm] = useState(false);
+  const [viewingSubmitting, setViewingSubmitting] = useState(false);
+  const [viewingSubmitted, setViewingSubmitted] = useState(false);
+  const [viewingError, setViewingError] = useState<string | null>(null);
+  const [viewingForm, setViewingForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    message: '',
+    preferredDate1: '',
+    preferredDate2: '',
+    preferredDate3: '',
+  });
+
+  const handleViewingSubmit = async () => {
+    setViewingSubmitting(true);
+    setViewingError(null);
+
+    try {
+      const res = await fetch('/api/viewings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          propertyId,
+          firstName: viewingForm.firstName,
+          lastName: viewingForm.lastName,
+          email: viewingForm.email,
+          phone: viewingForm.phone,
+          message: viewingForm.message || undefined,
+          preferredDate1: viewingForm.preferredDate1,
+          preferredDate2: viewingForm.preferredDate2 || undefined,
+          preferredDate3: viewingForm.preferredDate3 || undefined,
+        }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setViewingSubmitted(true);
+      } else {
+        setViewingError(result.error || 'Failed to submit viewing request');
+      }
+    } catch {
+      setViewingError('Failed to submit viewing request. Please try again.');
+    } finally {
+      setViewingSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -337,6 +389,193 @@ export default function ApplyPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Schedule a Viewing Card */}
+        {!viewingSubmitted ? (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="pt-6">
+              {!showViewingForm ? (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                      <Eye className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Want to see it first?</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Schedule an in-person viewing before submitting your application. No SSN required.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowViewingForm(true)}
+                  >
+                    <Calendar className="h-4 w-4 mr-1" />
+                    Schedule Viewing
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-primary" />
+                      Schedule a Viewing
+                    </h3>
+                    <button
+                      onClick={() => setShowViewingForm(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {viewingError && (
+                    <div className="bg-destructive/10 text-destructive text-sm rounded-lg p-3">
+                      {viewingError}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vf-firstName">First Name *</Label>
+                      <Input
+                        id="vf-firstName"
+                        value={viewingForm.firstName}
+                        onChange={(e) =>
+                          setViewingForm((f) => ({ ...f, firstName: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vf-lastName">Last Name *</Label>
+                      <Input
+                        id="vf-lastName"
+                        value={viewingForm.lastName}
+                        onChange={(e) =>
+                          setViewingForm((f) => ({ ...f, lastName: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vf-email">Email *</Label>
+                      <Input
+                        id="vf-email"
+                        type="email"
+                        value={viewingForm.email}
+                        onChange={(e) =>
+                          setViewingForm((f) => ({ ...f, email: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vf-phone">Phone *</Label>
+                      <Input
+                        id="vf-phone"
+                        type="tel"
+                        value={viewingForm.phone}
+                        onChange={(e) =>
+                          setViewingForm((f) => ({ ...f, phone: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="vf-date1">Preferred Date & Time *</Label>
+                    <Input
+                      id="vf-date1"
+                      type="datetime-local"
+                      value={viewingForm.preferredDate1}
+                      onChange={(e) =>
+                        setViewingForm((f) => ({ ...f, preferredDate1: e.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vf-date2">2nd Choice (Optional)</Label>
+                      <Input
+                        id="vf-date2"
+                        type="datetime-local"
+                        value={viewingForm.preferredDate2}
+                        onChange={(e) =>
+                          setViewingForm((f) => ({ ...f, preferredDate2: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vf-date3">3rd Choice (Optional)</Label>
+                      <Input
+                        id="vf-date3"
+                        type="datetime-local"
+                        value={viewingForm.preferredDate3}
+                        onChange={(e) =>
+                          setViewingForm((f) => ({ ...f, preferredDate3: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="vf-message">Message (Optional)</Label>
+                    <Textarea
+                      id="vf-message"
+                      rows={2}
+                      placeholder="Any questions or special requests..."
+                      value={viewingForm.message}
+                      onChange={(e) =>
+                        setViewingForm((f) => ({ ...f, message: e.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <Button
+                    className="w-full"
+                    onClick={handleViewingSubmit}
+                    disabled={
+                      viewingSubmitting ||
+                      !viewingForm.firstName ||
+                      !viewingForm.lastName ||
+                      !viewingForm.email ||
+                      !viewingForm.phone ||
+                      !viewingForm.preferredDate1
+                    }
+                  >
+                    {viewingSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      'Request Viewing'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-green-200 bg-green-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-6 w-6 text-green-500 shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-green-800">Viewing Request Submitted!</h3>
+                  <p className="text-sm text-green-700">
+                    The property manager will contact you to confirm a viewing time.
+                    You can still continue with your application below.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Step Indicator */}
         <div className="flex items-center justify-between overflow-x-auto gap-1 px-1">

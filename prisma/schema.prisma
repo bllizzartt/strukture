@@ -254,6 +254,7 @@ model Property {
   units           Unit[]
   documents       Document[]
   applications    RentalApplication[]
+  viewingRequests ViewingRequest[]
 
   @@index([ownerId])
   @@index([status])
@@ -769,6 +770,50 @@ model RentalApplication {
 
   @@index([propertyId])
   @@index([unitId])
+  @@index([email])
+  @@index([status])
+}
+
+// ============ VIEWING REQUESTS ============
+
+enum ViewingStatus {
+  REQUESTED
+  CONFIRMED
+  RESCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model ViewingRequest {
+  id                String        @id @default(cuid())
+  propertyId        String
+  unitId            String?
+
+  // Visitor info (no SSN or sensitive data - just contact info)
+  firstName         String
+  lastName          String
+  email             String
+  phone             String
+  message           String?       @db.Text
+
+  // Scheduling
+  preferredDate1    DateTime
+  preferredDate2    DateTime?
+  preferredDate3    DateTime?
+  confirmedDate     DateTime?
+
+  // Status
+  status            ViewingStatus @default(REQUESTED)
+  landlordNotes     String?       @db.Text
+
+  // Timestamps
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relations
+  property          Property      @relation(fields: [propertyId], references: [id])
+
+  @@index([propertyId])
   @@index([email])
   @@index([status])
 }

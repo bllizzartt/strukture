@@ -353,6 +353,20 @@ export interface ApplicationSubmittedData {
   applicationId: string;
 }
 
+export interface ViewingRequestEmailData {
+  landlordName: string;
+  visitorName: string;
+  visitorEmail: string;
+  visitorPhone: string;
+  message?: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  preferredDate1: string;
+  preferredDate2?: string;
+  preferredDate3?: string;
+}
+
 export interface ApplicationConfirmationData {
   applicantName: string;
   propertyName: string;
@@ -919,6 +933,90 @@ export async function sendApplicationConfirmationEmail(
     return true;
   } catch (error) {
     console.error('Failed to send application confirmation email:', error);
+    return false;
+  }
+}
+
+/**
+ * Send viewing request notification to landlord
+ */
+export async function sendViewingRequestEmail(
+  to: string,
+  data: ViewingRequestEmailData
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const content = `
+    <h2>New Viewing Request</h2>
+    <p>Dear ${data.landlordName},</p>
+    <p>Someone would like to schedule a viewing of <strong>${data.propertyName}</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Name:</span>
+        <span class="value">${data.visitorName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Email:</span>
+        <span class="value">${data.visitorEmail}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Phone:</span>
+        <span class="value">${data.visitorPhone}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+    </div>
+
+    <h3>Preferred Dates</h3>
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">1st Choice:</span>
+        <span class="value">${formatDate(data.preferredDate1)}</span>
+      </div>
+      ${data.preferredDate2 ? `
+      <div class="info-row">
+        <span class="label">2nd Choice:</span>
+        <span class="value">${formatDate(data.preferredDate2)}</span>
+      </div>
+      ` : ''}
+      ${data.preferredDate3 ? `
+      <div class="info-row">
+        <span class="label">3rd Choice:</span>
+        <span class="value">${formatDate(data.preferredDate3)}</span>
+      </div>
+      ` : ''}
+    </div>
+
+    ${data.message ? `
+    <h3>Message from Visitor</h3>
+    <div class="info-box">
+      <p>${data.message}</p>
+    </div>
+    ` : ''}
+
+    <p>Please contact the visitor to confirm a date and time. You can reply directly to their email or call them.</p>
+
+    <a href="mailto:${data.visitorEmail}?subject=Viewing Confirmation - ${encodeURIComponent(data.propertyName)}" class="button">Reply to ${data.visitorName}</a>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Viewing Request: ${data.visitorName} - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send viewing request email:', error);
     return false;
   }
 }

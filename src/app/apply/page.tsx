@@ -16,11 +16,22 @@ import {
   PawPrint,
   Car,
   X,
+  Eye,
+  CheckCircle2,
+  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -81,6 +92,82 @@ export default function ApplyLandingPage() {
   const [maxRentFilter, setMaxRentFilter] = useState('any');
   const [typeFilter, setTypeFilter] = useState('any');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Viewing modal state
+  const [viewingOpen, setViewingOpen] = useState(false);
+  const [viewingProperty, setViewingProperty] = useState<PropertyInfo | null>(null);
+  const [viewingSubmitting, setViewingSubmitting] = useState(false);
+  const [viewingSubmitted, setViewingSubmitted] = useState(false);
+  const [viewingError, setViewingError] = useState<string | null>(null);
+  const [viewingForm, setViewingForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    message: '',
+    preferredDate1: '',
+    preferredDate2: '',
+    preferredDate3: '',
+  });
+
+  const openViewingModal = (property: PropertyInfo) => {
+    setViewingProperty(property);
+    setViewingOpen(true);
+    setViewingSubmitted(false);
+    setViewingError(null);
+  };
+
+  const closeViewingModal = () => {
+    setViewingOpen(false);
+    setViewingProperty(null);
+    setViewingForm({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      message: '',
+      preferredDate1: '',
+      preferredDate2: '',
+      preferredDate3: '',
+    });
+    setViewingSubmitted(false);
+    setViewingError(null);
+  };
+
+  const handleViewingSubmit = async () => {
+    if (!viewingProperty) return;
+    setViewingSubmitting(true);
+    setViewingError(null);
+
+    try {
+      const res = await fetch('/api/viewings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          propertyId: viewingProperty.id,
+          firstName: viewingForm.firstName,
+          lastName: viewingForm.lastName,
+          email: viewingForm.email,
+          phone: viewingForm.phone,
+          message: viewingForm.message || undefined,
+          preferredDate1: viewingForm.preferredDate1,
+          preferredDate2: viewingForm.preferredDate2 || undefined,
+          preferredDate3: viewingForm.preferredDate3 || undefined,
+        }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        setViewingSubmitted(true);
+      } else {
+        setViewingError(result.error || 'Failed to submit viewing request');
+      }
+    } catch {
+      setViewingError('Failed to submit viewing request. Please try again.');
+    } finally {
+      setViewingSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchProperties() {
@@ -440,7 +527,7 @@ export default function ApplyLandingPage() {
                       </p>
                     </div>
 
-                    {/* Apply CTA */}
+                    {/* CTA Buttons */}
                     <div className="shrink-0 flex flex-col items-center gap-2">
                       <Button
                         size="sm"
@@ -453,6 +540,18 @@ export default function ApplyLandingPage() {
                         Apply Now
                         <ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="whitespace-nowrap"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openViewingModal(property);
+                        }}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        Schedule Viewing
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -461,6 +560,163 @@ export default function ApplyLandingPage() {
           </div>
         )}
       </div>
+
+      {/* Schedule a Viewing Modal */}
+      <Dialog open={viewingOpen} onOpenChange={(open) => !open && closeViewingModal()}>
+        <DialogContent className="max-w-md">
+          {viewingSubmitted ? (
+            <div className="text-center py-4">
+              <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
+              <h3 className="text-lg font-semibold mb-2">Viewing Request Submitted!</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                The property manager will contact you to confirm a viewing time for{' '}
+                <strong>{viewingProperty?.name}</strong>.
+              </p>
+              <Button onClick={closeViewingModal}>Close</Button>
+            </div>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Schedule a Viewing
+                </DialogTitle>
+                <DialogDescription>
+                  Request an in-person viewing of{' '}
+                  <strong>{viewingProperty?.name}</strong>. No application or SSN required.
+                </DialogDescription>
+              </DialogHeader>
+
+              {viewingError && (
+                <div className="bg-destructive/10 text-destructive text-sm rounded-lg p-3">
+                  {viewingError}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="v-firstName">First Name *</Label>
+                    <Input
+                      id="v-firstName"
+                      value={viewingForm.firstName}
+                      onChange={(e) =>
+                        setViewingForm((f) => ({ ...f, firstName: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="v-lastName">Last Name *</Label>
+                    <Input
+                      id="v-lastName"
+                      value={viewingForm.lastName}
+                      onChange={(e) =>
+                        setViewingForm((f) => ({ ...f, lastName: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="v-email">Email *</Label>
+                  <Input
+                    id="v-email"
+                    type="email"
+                    value={viewingForm.email}
+                    onChange={(e) =>
+                      setViewingForm((f) => ({ ...f, email: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="v-phone">Phone *</Label>
+                  <Input
+                    id="v-phone"
+                    type="tel"
+                    value={viewingForm.phone}
+                    onChange={(e) =>
+                      setViewingForm((f) => ({ ...f, phone: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="v-date1">Preferred Date & Time *</Label>
+                  <Input
+                    id="v-date1"
+                    type="datetime-local"
+                    value={viewingForm.preferredDate1}
+                    onChange={(e) =>
+                      setViewingForm((f) => ({ ...f, preferredDate1: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="v-date2">2nd Choice (Optional)</Label>
+                    <Input
+                      id="v-date2"
+                      type="datetime-local"
+                      value={viewingForm.preferredDate2}
+                      onChange={(e) =>
+                        setViewingForm((f) => ({ ...f, preferredDate2: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="v-date3">3rd Choice (Optional)</Label>
+                    <Input
+                      id="v-date3"
+                      type="datetime-local"
+                      value={viewingForm.preferredDate3}
+                      onChange={(e) =>
+                        setViewingForm((f) => ({ ...f, preferredDate3: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="v-message">Message (Optional)</Label>
+                  <Textarea
+                    id="v-message"
+                    rows={2}
+                    placeholder="Any questions or special requests..."
+                    value={viewingForm.message}
+                    onChange={(e) =>
+                      setViewingForm((f) => ({ ...f, message: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={handleViewingSubmit}
+                  disabled={
+                    viewingSubmitting ||
+                    !viewingForm.firstName ||
+                    !viewingForm.lastName ||
+                    !viewingForm.email ||
+                    !viewingForm.phone ||
+                    !viewingForm.preferredDate1
+                  }
+                >
+                  {viewingSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    'Request Viewing'
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

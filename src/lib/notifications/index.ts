@@ -200,6 +200,69 @@ export async function notifyApplicationSubmitted(
   });
 }
 
+// ==================== Viewing Request Notifications ====================
+
+export interface ViewingRequestNotificationData {
+  viewingId: string;
+  visitorName: string;
+  visitorEmail: string;
+  visitorPhone: string;
+  message?: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  preferredDate1: string;
+  preferredDate2?: string;
+  preferredDate3?: string;
+  landlordId: string;
+  landlordEmail: string;
+  landlordName: string;
+  landlordTelegramId?: string | null;
+}
+
+/**
+ * Notify landlord when a viewing is requested
+ */
+export async function notifyViewingRequested(
+  data: ViewingRequestNotificationData
+): Promise<void> {
+  // 1. Send email to landlord
+  await emailService.sendViewingRequestEmail(data.landlordEmail, {
+    landlordName: data.landlordName,
+    visitorName: data.visitorName,
+    visitorEmail: data.visitorEmail,
+    visitorPhone: data.visitorPhone,
+    message: data.message,
+    propertyName: data.propertyName,
+    propertyAddress: data.propertyAddress,
+    unitNumber: data.unitNumber,
+    preferredDate1: data.preferredDate1,
+    preferredDate2: data.preferredDate2,
+    preferredDate3: data.preferredDate3,
+  });
+
+  // 2. Send Telegram notification if configured
+  if (data.landlordTelegramId) {
+    await telegramService.sendViewingNotification(data.landlordTelegramId, {
+      viewingId: data.viewingId,
+      visitorName: data.visitorName,
+      visitorPhone: data.visitorPhone,
+      propertyName: data.propertyName,
+      unitNumber: data.unitNumber,
+      preferredDate1: data.preferredDate1,
+    });
+  }
+
+  // 3. Create in-app notification
+  await createInAppNotification({
+    userId: data.landlordId,
+    type: 'APPLICATION_SUBMITTED',
+    title: 'New Viewing Request',
+    message: `${data.visitorName} wants to schedule a viewing at ${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}.`,
+    link: `/landlord/applications`,
+  });
+}
+
 // ==================== Payment Notifications ====================
 
 export interface PaymentReceivedNotificationData {

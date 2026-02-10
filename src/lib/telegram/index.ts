@@ -37,6 +37,15 @@ export interface PaymentNotification {
   paymentMethod: string;
 }
 
+export interface ViewingNotification {
+  viewingId: string;
+  visitorName: string;
+  visitorPhone: string;
+  propertyName: string;
+  unitNumber?: string;
+  preferredDate1: string;
+}
+
 export interface ApplicationNotification {
   applicationId: string;
   applicantName: string;
@@ -216,6 +225,41 @@ export async function sendLeaseNotification(
     return true;
   } catch (error) {
     console.error('Failed to send Telegram notification:', error);
+    return false;
+  }
+}
+
+/**
+ * Send a viewing request notification
+ */
+export async function sendViewingNotification(
+  chatId: string,
+  data: ViewingNotification
+): Promise<boolean> {
+  const bot = getBot();
+  if (!bot) return false;
+
+  const message = `
+🏠 *Viewing Request*
+
+*Visitor:* ${escapeMarkdown(data.visitorName)}
+*Phone:* ${escapeMarkdown(data.visitorPhone)}
+
+*Property:* ${escapeMarkdown(data.propertyName)}${data.unitNumber ? `\n*Unit:* ${escapeMarkdown(data.unitNumber)}` : ''}
+
+*Preferred Date:* ${escapeMarkdown(new Date(data.preferredDate1).toLocaleDateString())}
+
+Please contact them to confirm a time\\.
+`.trim();
+
+  try {
+    await bot.telegram.sendMessage(chatId, message, {
+      parse_mode: 'MarkdownV2',
+      link_preview_options: { is_disabled: true },
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send Telegram viewing notification:', error);
     return false;
   }
 }
