@@ -25,6 +25,7 @@ import {
   ShieldAlert,
   Search,
   ExternalLink,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -494,23 +495,54 @@ export default function ApplicationDetailPage() {
                 <div className="space-y-2">
                   {app.documents.map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between rounded-lg border p-3">
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{doc.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {formatBytes(doc.fileSize)} &middot; {doc.type.replace('_', ' ')}
                         </p>
                       </div>
-                      <a
-                        href={`/api/landlord/applications/${app.id}/documents/${doc.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button variant="ghost" size="icon" title="View document">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </a>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <a
+                          href={`/api/landlord/applications/${app.id}/documents/${doc.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button variant="ghost" size="icon" title="View document">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </a>
+                        <a
+                          href={`/api/landlord/applications/${app.id}/documents/${doc.id}?download=true`}
+                        >
+                          <Button variant="ghost" size="icon" title="Download document">
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      </div>
                     </div>
                   ))}
+                  {app.documents.length > 1 && (
+                    <div className="pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                          // Download all documents sequentially
+                          app.documents.forEach((doc, i) => {
+                            setTimeout(() => {
+                              const link = document.createElement('a');
+                              link.href = `/api/landlord/applications/${app.id}/documents/${doc.id}?download=true`;
+                              link.click();
+                            }, i * 500);
+                          });
+                        }}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download All ({app.documents.length} files)
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

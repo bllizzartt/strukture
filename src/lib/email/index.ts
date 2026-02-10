@@ -340,6 +340,19 @@ export interface LeaseExpirationData {
   daysRemaining: number;
 }
 
+export interface ApplicationSubmittedData {
+  landlordName: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone: string;
+  propertyName: string;
+  unitNumber?: string;
+  monthlyIncome?: string;
+  desiredMoveIn?: string;
+  numberOfDocuments: number;
+  applicationId: string;
+}
+
 // ==================== Email Sending Functions ====================
 
 /**
@@ -758,6 +771,77 @@ export async function sendLeaseExpirationReminder(
     return true;
   } catch (error) {
     console.error('Failed to send lease expiration reminder:', error);
+    return false;
+  }
+}
+
+/**
+ * Send new rental application notification to landlord
+ */
+export async function sendApplicationSubmittedEmail(
+  to: string,
+  data: ApplicationSubmittedData
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const content = `
+    <h2>New Rental Application Received</h2>
+    <p>Dear ${data.landlordName},</p>
+    <p>A new rental application has been submitted for <strong>${data.propertyName}</strong>.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Applicant:</span>
+        <span class="value">${data.applicantName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Email:</span>
+        <span class="value">${data.applicantEmail}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Phone:</span>
+        <span class="value">${data.applicantPhone}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      ${data.monthlyIncome ? `
+      <div class="info-row">
+        <span class="label">Monthly Income:</span>
+        <span class="value">$${parseFloat(data.monthlyIncome).toLocaleString()}</span>
+      </div>
+      ` : ''}
+      ${data.desiredMoveIn ? `
+      <div class="info-row">
+        <span class="label">Desired Move-In:</span>
+        <span class="value">${formatDate(data.desiredMoveIn)}</span>
+      </div>
+      ` : ''}
+      <div class="info-row">
+        <span class="label">Documents Uploaded:</span>
+        <span class="value">${data.numberOfDocuments} file(s)</span>
+      </div>
+    </div>
+
+    <p>Please review the full application, uploaded documents, and consider running a background/credit check.</p>
+
+    <a href="${APP_URL}/landlord/applications/${data.applicationId}" class="button">Review Application</a>
+
+    <p>You can approve, deny, or request additional information from within the portal.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `New Application: ${data.applicantName} - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send application submitted email:', error);
     return false;
   }
 }

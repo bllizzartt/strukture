@@ -37,6 +37,15 @@ export interface PaymentNotification {
   paymentMethod: string;
 }
 
+export interface ApplicationNotification {
+  applicationId: string;
+  applicantName: string;
+  applicantEmail: string;
+  propertyName: string;
+  unitNumber?: string;
+  numberOfDocuments: number;
+}
+
 export interface LeaseNotification {
   leaseId: string;
   tenantName: string;
@@ -207,6 +216,41 @@ export async function sendLeaseNotification(
     return true;
   } catch (error) {
     console.error('Failed to send Telegram notification:', error);
+    return false;
+  }
+}
+
+/**
+ * Send a new rental application notification
+ */
+export async function sendApplicationNotification(
+  chatId: string,
+  data: ApplicationNotification
+): Promise<boolean> {
+  const bot = getBot();
+  if (!bot) return false;
+
+  const message = `
+📋 *New Rental Application*
+
+*Applicant:* ${escapeMarkdown(data.applicantName)}
+*Email:* ${escapeMarkdown(data.applicantEmail)}
+
+*Property:* ${escapeMarkdown(data.propertyName)}${data.unitNumber ? `\n*Unit:* ${escapeMarkdown(data.unitNumber)}` : ''}
+
+*Documents:* ${data.numberOfDocuments} file(s) uploaded
+
+[Review Application](${process.env.NEXTAUTH_URL}/landlord/applications/${data.applicationId})
+`.trim();
+
+  try {
+    await bot.telegram.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      link_preview_options: { is_disabled: true },
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send Telegram application notification:', error);
     return false;
   }
 }

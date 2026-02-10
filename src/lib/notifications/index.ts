@@ -21,6 +21,7 @@ export type NotificationType =
   | 'MAINTENANCE_UPDATE'
   | 'LEASE_EXPIRING'
   | 'LEASE_SIGNED'
+  | 'APPLICATION_SUBMITTED'
   | 'WELCOME';
 
 // ==================== Maintenance Notifications ====================
@@ -125,6 +126,66 @@ export async function notifyMaintenanceUpdate(
     title: 'Maintenance Request Updated',
     message: `Your maintenance request "${data.title}" has been updated to: ${formatLabel(data.newStatus)}`,
     link: `/tenant/maintenance/${data.requestId}`,
+  });
+}
+
+// ==================== Application Notifications ====================
+
+export interface ApplicationSubmittedNotificationData {
+  applicationId: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone: string;
+  propertyName: string;
+  unitNumber?: string;
+  monthlyIncome?: string;
+  desiredMoveIn?: string;
+  numberOfDocuments: number;
+  landlordId: string;
+  landlordEmail: string;
+  landlordName: string;
+  landlordTelegramId?: string | null;
+}
+
+/**
+ * Notify landlord when a new rental application is submitted
+ */
+export async function notifyApplicationSubmitted(
+  data: ApplicationSubmittedNotificationData
+): Promise<void> {
+  // 1. Send email to landlord
+  await emailService.sendApplicationSubmittedEmail(data.landlordEmail, {
+    landlordName: data.landlordName,
+    applicantName: data.applicantName,
+    applicantEmail: data.applicantEmail,
+    applicantPhone: data.applicantPhone,
+    propertyName: data.propertyName,
+    unitNumber: data.unitNumber,
+    monthlyIncome: data.monthlyIncome,
+    desiredMoveIn: data.desiredMoveIn,
+    numberOfDocuments: data.numberOfDocuments,
+    applicationId: data.applicationId,
+  });
+
+  // 2. Send Telegram notification if configured
+  if (data.landlordTelegramId) {
+    await telegramService.sendApplicationNotification(data.landlordTelegramId, {
+      applicationId: data.applicationId,
+      applicantName: data.applicantName,
+      applicantEmail: data.applicantEmail,
+      propertyName: data.propertyName,
+      unitNumber: data.unitNumber,
+      numberOfDocuments: data.numberOfDocuments,
+    });
+  }
+
+  // 3. Create in-app notification
+  await createInAppNotification({
+    userId: data.landlordId,
+    type: 'APPLICATION_SUBMITTED',
+    title: 'New Rental Application',
+    message: `${data.applicantName} submitted a rental application for ${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}. ${data.numberOfDocuments} document(s) uploaded.`,
+    link: `/landlord/applications/${data.applicationId}`,
   });
 }
 
@@ -373,6 +434,8 @@ function mapToCategory(type: NotificationType): NotificationCategory {
     case 'LEASE_EXPIRING':
     case 'LEASE_SIGNED':
       return 'LEASE_EXPIRING';
+    case 'APPLICATION_SUBMITTED':
+      return 'GENERAL';
     case 'WELCOME':
     default:
       return 'GENERAL';

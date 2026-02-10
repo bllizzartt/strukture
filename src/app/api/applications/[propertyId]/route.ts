@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { encrypt } from '@/lib/encryption';
+import { notifyApplicationSubmitted } from '@/lib/notifications';
 
 // GET /api/applications/[propertyId] - Get property info for application (public)
 export async function GET(
@@ -74,10 +75,23 @@ export async function POST(
   try {
     const { propertyId } = await params;
 
-    // Verify property exists and is active
+    // Verify property exists and is active, include owner for notifications
     const property = await prisma.property.findUnique({
       where: { id: propertyId, status: 'ACTIVE' },
-      select: { id: true, name: true, ownerId: true },
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        owner: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            telegramChatId: true,
+          },
+        },
+      },
     });
 
     if (!property) {
@@ -288,6 +302,43 @@ export async function POST(
         ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
       },
     });
+
+    // Count total documents uploaded
+    const totalDocs = await prisma.document.count({
+      where: { applicationId: application.id },
+    });
+
+    // Look up selected unit number for notification
+    let unitNumber: string | undefined;
+    if (unitId) {
+      const unit = await prisma.unit.findUnique({
+        where: { id: unitId },
+        select: { unitNumber: true },
+      });
+      unitNumber = unit?.unitNumber;
+    }
+
+    // Notify landlord via email, Telegram, and in-app
+    try {
+      await notifyApplicationSubmitted({
+        applicationId: application.id,
+        applicantName: `${firstName} ${lastName}`,
+        applicantEmail: email,
+        applicantPhone: phone,
+        propertyName: property.name,
+        unitNumber,
+        monthlyIncome: (formData.get('monthlyIncome') as string) || undefined,
+        desiredMoveIn: (formData.get('desiredMoveIn') as string) || undefined,
+        numberOfDocuments: totalDocs,
+        landlordId: property.owner.id,
+        landlordEmail: property.owner.email,
+        landlordName: `${property.owner.firstName} ${property.owner.lastName}`,
+        landlordTelegramId: property.owner.telegramChatId,
+      });
+    } catch (notifyError) {
+      // Don't fail the application submission if notifications fail
+      console.error('Failed to send landlord notifications:', notifyError);
+    }
 
     return NextResponse.json(
       {
