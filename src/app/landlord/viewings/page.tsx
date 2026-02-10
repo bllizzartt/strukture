@@ -13,14 +13,16 @@ import {
   Search,
   Phone,
   Mail,
-  MapPin,
   CalendarCheck,
   CalendarX,
   RotateCcw,
   MessageSquare,
+  Plus,
+  Trash2,
+  CalendarPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -39,6 +41,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+
+// ==================== Interfaces ====================
 
 interface ViewingRequest {
   id: string;
@@ -63,6 +67,23 @@ interface ViewingRequest {
     zipCode: string;
   };
 }
+
+interface ViewingSlot {
+  id: string;
+  propertyId: string;
+  startTime: string;
+  endTime: string;
+  isActive: boolean;
+  property: { id: string; name: string };
+  _count: { bookings: number };
+}
+
+interface PropertyOption {
+  id: string;
+  name: string;
+}
+
+// ==================== Config ====================
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   REQUESTED: {
@@ -111,13 +132,71 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+// ==================== Main Component ====================
+
+type Tab = 'requests' | 'slots';
+
 export default function ViewingsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('requests');
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold">Property Viewings</h1>
+        <p className="text-muted-foreground">
+          Manage viewing requests and set available time slots
+        </p>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 border-b">
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={cn(
+            'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+            activeTab === 'requests'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Eye className="h-4 w-4 inline mr-1.5" />
+          Viewing Requests
+        </button>
+        <button
+          onClick={() => setActiveTab('slots')}
+          className={cn(
+            'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+            activeTab === 'slots'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Calendar className="h-4 w-4 inline mr-1.5" />
+          Available Time Slots
+        </button>
+      </div>
+
+      {activeTab === 'requests' && <ViewingRequestsTab />}
+      {activeTab === 'slots' && <TimeSlotsTab />}
+    </div>
+  );
+}
+
+// ==================== Viewing Requests Tab ====================
+
+function ViewingRequestsTab() {
   const [viewings, setViewings] = useState<ViewingRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Action modal state
   const [selectedViewing, setSelectedViewing] = useState<ViewingRequest | null>(null);
   const [actionType, setActionType] = useState<'confirm' | 'notes' | null>(null);
   const [confirmedDate, setConfirmedDate] = useState('');
@@ -192,7 +271,6 @@ export default function ViewingsPage() {
   const openConfirmDialog = (viewing: ViewingRequest) => {
     setSelectedViewing(viewing);
     setActionType('confirm');
-    // Pre-fill with first preferred date
     if (viewing.preferredDate1) {
       const d = new Date(viewing.preferredDate1);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
@@ -210,14 +288,7 @@ export default function ViewingsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Property Viewings</h1>
-        <p className="text-muted-foreground">
-          Manage viewing requests and schedule property tours
-        </p>
-      </div>
-
+    <>
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
@@ -292,7 +363,6 @@ export default function ViewingsPage() {
               <Card key={viewing.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="py-4">
                   <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                    {/* Left: visitor info */}
                     <div className="flex items-start gap-4 flex-1 min-w-0">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
                         <User className="h-5 w-5 text-primary" />
@@ -333,7 +403,6 @@ export default function ViewingsPage() {
                           </span>
                         </div>
 
-                        {/* Preferred dates */}
                         <div className="mt-2 space-y-0.5">
                           <div className="flex items-center gap-1.5 text-sm">
                             <Calendar className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -387,23 +456,17 @@ export default function ViewingsPage() {
                       </div>
                     </div>
 
-                    {/* Right: actions */}
                     <div className="flex flex-row md:flex-col gap-2 shrink-0">
                       {viewing.status === 'REQUESTED' && (
                         <>
-                          <Button
-                            size="sm"
-                            onClick={() => openConfirmDialog(viewing)}
-                          >
+                          <Button size="sm" onClick={() => openConfirmDialog(viewing)}>
                             <CalendarCheck className="h-4 w-4 mr-1" />
                             Confirm
                           </Button>
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() =>
-                              updateViewing(viewing.id, { status: 'CANCELLED' })
-                            }
+                            onClick={() => updateViewing(viewing.id, { status: 'CANCELLED' })}
                             disabled={isUpdating}
                           >
                             <CalendarX className="h-4 w-4 mr-1" />
@@ -415,9 +478,7 @@ export default function ViewingsPage() {
                         <>
                           <Button
                             size="sm"
-                            onClick={() =>
-                              updateViewing(viewing.id, { status: 'COMPLETED' })
-                            }
+                            onClick={() => updateViewing(viewing.id, { status: 'COMPLETED' })}
                             disabled={isUpdating}
                           >
                             <CheckCircle2 className="h-4 w-4 mr-1" />
@@ -434,9 +495,7 @@ export default function ViewingsPage() {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() =>
-                              updateViewing(viewing.id, { status: 'CANCELLED' })
-                            }
+                            onClick={() => updateViewing(viewing.id, { status: 'CANCELLED' })}
                             disabled={isUpdating}
                           >
                             <XCircle className="h-4 w-4 mr-1" />
@@ -446,19 +505,14 @@ export default function ViewingsPage() {
                       )}
                       {viewing.status === 'RESCHEDULED' && (
                         <>
-                          <Button
-                            size="sm"
-                            onClick={() => openConfirmDialog(viewing)}
-                          >
+                          <Button size="sm" onClick={() => openConfirmDialog(viewing)}>
                             <CalendarCheck className="h-4 w-4 mr-1" />
                             Confirm
                           </Button>
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() =>
-                              updateViewing(viewing.id, { status: 'CANCELLED' })
-                            }
+                            onClick={() => updateViewing(viewing.id, { status: 'CANCELLED' })}
                             disabled={isUpdating}
                           >
                             <XCircle className="h-4 w-4 mr-1" />
@@ -466,12 +520,7 @@ export default function ViewingsPage() {
                           </Button>
                         </>
                       )}
-                      {/* Notes button always available */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openNotesDialog(viewing)}
-                      >
+                      <Button size="sm" variant="ghost" onClick={() => openNotesDialog(viewing)}>
                         <MessageSquare className="h-4 w-4 mr-1" />
                         Notes
                       </Button>
@@ -510,30 +559,21 @@ export default function ViewingsPage() {
               at <strong>{selectedViewing?.property.name}</strong>.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
-            {/* Show preferred dates for reference */}
             {selectedViewing && (
               <div className="rounded-lg bg-muted p-3 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">
                   Visitor&apos;s preferred dates:
                 </p>
-                <p className="text-sm">
-                  1st: {formatDateTime(selectedViewing.preferredDate1)}
-                </p>
+                <p className="text-sm">1st: {formatDateTime(selectedViewing.preferredDate1)}</p>
                 {selectedViewing.preferredDate2 && (
-                  <p className="text-sm">
-                    2nd: {formatDateTime(selectedViewing.preferredDate2)}
-                  </p>
+                  <p className="text-sm">2nd: {formatDateTime(selectedViewing.preferredDate2)}</p>
                 )}
                 {selectedViewing.preferredDate3 && (
-                  <p className="text-sm">
-                    3rd: {formatDateTime(selectedViewing.preferredDate3)}
-                  </p>
+                  <p className="text-sm">3rd: {formatDateTime(selectedViewing.preferredDate3)}</p>
                 )}
               </div>
             )}
-
             <div className="space-y-1.5">
               <Label htmlFor="confirmedDate">Confirmed Date & Time *</Label>
               <Input
@@ -543,7 +583,6 @@ export default function ViewingsPage() {
                 onChange={(e) => setConfirmedDate(e.target.value)}
               />
             </div>
-
             <div className="space-y-1.5">
               <Label htmlFor="confirm-notes">Notes (Optional)</Label>
               <Textarea
@@ -554,16 +593,13 @@ export default function ViewingsPage() {
                 onChange={(e) => setNotes(e.target.value)}
               />
             </div>
-
             <Button
               className="w-full"
               onClick={() => {
                 if (!selectedViewing || !confirmedDate) return;
                 updateViewing(selectedViewing.id, {
                   status:
-                    selectedViewing.status === 'CONFIRMED'
-                      ? 'RESCHEDULED'
-                      : 'CONFIRMED',
+                    selectedViewing.status === 'CONFIRMED' ? 'RESCHEDULED' : 'CONFIRMED',
                   confirmedDate,
                   landlordNotes: notes || undefined,
                 });
@@ -608,7 +644,6 @@ export default function ViewingsPage() {
               </strong>.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
             <Textarea
               rows={4}
@@ -616,7 +651,6 @@ export default function ViewingsPage() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
-
             <Button
               className="w-full"
               onClick={() => {
@@ -637,6 +671,421 @@ export default function ViewingsPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
+  );
+}
+
+// ==================== Time Slots Tab ====================
+
+function TimeSlotsTab() {
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
+  const [slots, setSlots] = useState<ViewingSlot[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedPropertyId, setSelectedPropertyId] = useState('all');
+
+  // Add slot form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addPropertyId, setAddPropertyId] = useState('');
+  const [newSlots, setNewSlots] = useState([{ date: '', startTime: '', endTime: '' }]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const fetchProperties = useCallback(async () => {
+    try {
+      const res = await fetch('/api/landlord/properties');
+      const result = await res.json();
+      if (result.success) {
+        setProperties(
+          result.data.map((p: any) => ({ id: p.id, name: p.name }))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to fetch properties:', error);
+    }
+  }, []);
+
+  const fetchSlots = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (selectedPropertyId !== 'all') params.set('propertyId', selectedPropertyId);
+      const res = await fetch(`/api/landlord/viewings/slots?${params}`);
+      const result = await res.json();
+      if (result.success) {
+        setSlots(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch slots:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedPropertyId]);
+
+  useEffect(() => {
+    fetchProperties();
+  }, [fetchProperties]);
+
+  useEffect(() => {
+    fetchSlots();
+  }, [fetchSlots]);
+
+  const addSlotRow = () => {
+    setNewSlots((prev) => [...prev, { date: '', startTime: '', endTime: '' }]);
+  };
+
+  const removeSlotRow = (index: number) => {
+    setNewSlots((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateSlotRow = (index: number, field: string, value: string) => {
+    setNewSlots((prev) =>
+      prev.map((slot, i) => (i === index ? { ...slot, [field]: value } : slot))
+    );
+  };
+
+  const handleAddSlots = async () => {
+    if (!addPropertyId) {
+      setAddError('Please select a property');
+      return;
+    }
+
+    const validSlots = newSlots
+      .filter((s) => s.date && s.startTime && s.endTime)
+      .map((s) => ({
+        startTime: `${s.date}T${s.startTime}`,
+        endTime: `${s.date}T${s.endTime}`,
+      }));
+
+    if (validSlots.length === 0) {
+      setAddError('Please add at least one complete time slot');
+      return;
+    }
+
+    setIsAdding(true);
+    setAddError(null);
+
+    try {
+      const res = await fetch('/api/landlord/viewings/slots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ propertyId: addPropertyId, slots: validSlots }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setShowAddForm(false);
+        setNewSlots([{ date: '', startTime: '', endTime: '' }]);
+        setAddPropertyId('');
+        fetchSlots();
+      } else {
+        setAddError(result.error || 'Failed to create slots');
+      }
+    } catch {
+      setAddError('Failed to create slots. Please try again.');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const deleteSlot = async (slotId: string) => {
+    try {
+      const res = await fetch(`/api/landlord/viewings/slots/${slotId}`, {
+        method: 'DELETE',
+      });
+      const result = await res.json();
+      if (result.success) {
+        setSlots((prev) => prev.filter((s) => s.id !== slotId));
+      }
+    } catch (error) {
+      console.error('Failed to delete slot:', error);
+    }
+  };
+
+  // Group slots by property
+  const slotsByProperty: Record<string, { propertyName: string; slots: ViewingSlot[] }> = {};
+  const displaySlots =
+    selectedPropertyId === 'all'
+      ? slots
+      : slots.filter((s) => s.propertyId === selectedPropertyId);
+
+  for (const slot of displaySlots) {
+    if (!slotsByProperty[slot.propertyId]) {
+      slotsByProperty[slot.propertyId] = {
+        propertyName: slot.property.name,
+        slots: [],
+      };
+    }
+    slotsByProperty[slot.propertyId].slots.push(slot);
+  }
+
+  // Separate future vs past slots
+  const now = new Date();
+
+  return (
+    <>
+      {/* Top Actions */}
+      <div className="flex items-center justify-between">
+        <Select value={selectedPropertyId} onValueChange={setSelectedPropertyId}>
+          <SelectTrigger className="w-[250px]">
+            <SelectValue placeholder="Filter by property" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Properties</SelectItem>
+            {properties.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Button onClick={() => setShowAddForm(true)}>
+          <CalendarPlus className="h-4 w-4 mr-2" />
+          Add Time Slots
+        </Button>
+      </div>
+
+      {/* Add Slots Form */}
+      {showAddForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CalendarPlus className="h-5 w-5" />
+              Add Available Time Slots
+            </CardTitle>
+            <CardDescription>
+              Set times when prospective tenants can schedule a viewing. Visitors will see these
+              slots and pick one when requesting a viewing.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Property *</Label>
+              <Select value={addPropertyId} onValueChange={setAddPropertyId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a property" />
+                </SelectTrigger>
+                <SelectContent>
+                  {properties.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {addError && (
+              <div className="bg-destructive/10 text-destructive text-sm rounded-lg p-3">
+                {addError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <Label>Time Slots</Label>
+              {newSlots.map((slot, index) => (
+                <div key={index} className="flex items-end gap-3">
+                  <div className="space-y-1 flex-1">
+                    {index === 0 && (
+                      <Label className="text-xs text-muted-foreground">Date</Label>
+                    )}
+                    <Input
+                      type="date"
+                      value={slot.date}
+                      onChange={(e) => updateSlotRow(index, 'date', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1 w-[130px]">
+                    {index === 0 && (
+                      <Label className="text-xs text-muted-foreground">Start Time</Label>
+                    )}
+                    <Input
+                      type="time"
+                      value={slot.startTime}
+                      onChange={(e) => updateSlotRow(index, 'startTime', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1 w-[130px]">
+                    {index === 0 && (
+                      <Label className="text-xs text-muted-foreground">End Time</Label>
+                    )}
+                    <Input
+                      type="time"
+                      value={slot.endTime}
+                      onChange={(e) => updateSlotRow(index, 'endTime', e.target.value)}
+                    />
+                  </div>
+                  {newSlots.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeSlotRow(index)}
+                      className="shrink-0"
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addSlotRow}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Another Slot
+              </Button>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                onClick={handleAddSlots}
+                disabled={isAdding}
+                className="flex-1"
+              >
+                {isAdding ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Time Slots'
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setAddError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Existing Slots */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : Object.keys(slotsByProperty).length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2">No Time Slots Set</h3>
+            <p className="text-muted-foreground mb-4">
+              Add available viewing times so prospective tenants can schedule visits.
+            </p>
+            {!showAddForm && (
+              <Button onClick={() => setShowAddForm(true)}>
+                <CalendarPlus className="h-4 w-4 mr-2" />
+                Add Time Slots
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(slotsByProperty).map(([propertyId, group]) => {
+            const futureSlots = group.slots.filter(
+              (s) => new Date(s.startTime) >= now && s.isActive
+            );
+            const pastSlots = group.slots.filter(
+              (s) => new Date(s.startTime) < now || !s.isActive
+            );
+
+            return (
+              <Card key={propertyId}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Building2 className="h-4 w-4" />
+                    {group.propertyName}
+                  </CardTitle>
+                  <CardDescription>
+                    {futureSlots.length} upcoming slot{futureSlots.length !== 1 ? 's' : ''}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {futureSlots.length > 0 && (
+                    <div className="space-y-2">
+                      {futureSlots.map((slot) => (
+                        <div
+                          key={slot.id}
+                          className="flex items-center justify-between rounded-lg border p-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Calendar className="h-4 w-4 text-primary shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium">
+                                {formatDate(slot.startTime)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {slot._count.bookings > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                {slot._count.bookings} booking{slot._count.bookings !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteSlot(slot.id)}
+                              title="Remove slot"
+                            >
+                              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {pastSlots.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Past / Inactive ({pastSlots.length})
+                      </p>
+                      <div className="space-y-1">
+                        {pastSlots.slice(0, 3).map((slot) => (
+                          <div
+                            key={slot.id}
+                            className="flex items-center justify-between rounded-lg border border-dashed p-2 opacity-50"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(slot.startTime)} &middot;{' '}
+                                {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                              </span>
+                            </div>
+                            {slot._count.bookings > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                {slot._count.bookings} booking{slot._count.bookings !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {pastSlots.length > 3 && (
+                          <p className="text-xs text-muted-foreground pl-6">
+                            +{pastSlots.length - 3} more
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }

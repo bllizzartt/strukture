@@ -255,6 +255,7 @@ model Property {
   documents       Document[]
   applications    RentalApplication[]
   viewingRequests ViewingRequest[]
+  viewingSlots    ViewingSlot[]
 
   @@index([ownerId])
   @@index([status])
@@ -812,10 +813,35 @@ model ViewingRequest {
 
   // Relations
   property          Property      @relation(fields: [propertyId], references: [id])
+  slotId            String?
+  slot              ViewingSlot?  @relation(fields: [slotId], references: [id])
 
   @@index([propertyId])
   @@index([email])
   @@index([status])
+  @@index([slotId])
+}
+
+model ViewingSlot {
+  id              String           @id @default(cuid())
+  propertyId      String
+
+  // Time slot
+  startTime       DateTime
+  endTime         DateTime
+  isActive        Boolean          @default(true)
+
+  // Timestamps
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  property        Property         @relation(fields: [propertyId], references: [id])
+  bookings        ViewingRequest[]
+
+  @@index([propertyId])
+  @@index([startTime])
+  @@index([isActive])
 }
 
 model EmailTemplate {

@@ -17,6 +17,7 @@ import {
   MapPin,
   Eye,
   Calendar,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -178,6 +179,9 @@ export default function ApplyPage() {
   const [viewingSubmitting, setViewingSubmitting] = useState(false);
   const [viewingSubmitted, setViewingSubmitted] = useState(false);
   const [viewingError, setViewingError] = useState<string | null>(null);
+  const [viewingSlots, setViewingSlots] = useState<{ id: string; startTime: string; endTime: string }[]>([]);
+  const [viewingSlotsLoading, setViewingSlotsLoading] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [viewingForm, setViewingForm] = useState({
     firstName: '',
     lastName: '',
@@ -189,6 +193,37 @@ export default function ApplyPage() {
     preferredDate3: '',
   });
 
+  const fetchViewingSlots = async () => {
+    setViewingSlotsLoading(true);
+    try {
+      const res = await fetch(`/api/viewings?propertyId=${propertyId}`);
+      const result = await res.json();
+      if (result.success && result.data.length > 0) {
+        setViewingSlots(result.data);
+      }
+    } catch {
+      // Slots not available, fall back to manual date selection
+    } finally {
+      setViewingSlotsLoading(false);
+    }
+  };
+
+  const handleShowViewingForm = () => {
+    setShowViewingForm(true);
+    fetchViewingSlots();
+  };
+
+  const formatSlotDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  const formatSlotTime = (startStr: string, endStr: string) => {
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    return `${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  };
+
   const handleViewingSubmit = async () => {
     setViewingSubmitting(true);
     setViewingError(null);
@@ -199,14 +234,19 @@ export default function ApplyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           propertyId,
+          ...(selectedSlotId ? { slotId: selectedSlotId } : {}),
           firstName: viewingForm.firstName,
           lastName: viewingForm.lastName,
           email: viewingForm.email,
           phone: viewingForm.phone,
           message: viewingForm.message || undefined,
-          preferredDate1: viewingForm.preferredDate1,
-          preferredDate2: viewingForm.preferredDate2 || undefined,
-          preferredDate3: viewingForm.preferredDate3 || undefined,
+          ...(selectedSlotId
+            ? {}
+            : {
+                preferredDate1: viewingForm.preferredDate1,
+                preferredDate2: viewingForm.preferredDate2 || undefined,
+                preferredDate3: viewingForm.preferredDate3 || undefined,
+              }),
         }),
       });
 
@@ -410,7 +450,7 @@ export default function ApplyPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowViewingForm(true)}
+                    onClick={handleShowViewingForm}
                   >
                     <Calendar className="h-4 w-4 mr-1" />
                     Schedule Viewing
@@ -485,42 +525,78 @@ export default function ApplyPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="vf-date1">Preferred Date & Time *</Label>
-                    <Input
-                      id="vf-date1"
-                      type="datetime-local"
-                      value={viewingForm.preferredDate1}
-                      onChange={(e) =>
-                        setViewingForm((f) => ({ ...f, preferredDate1: e.target.value }))
-                      }
-                    />
-                  </div>
+                  {/* Time slot selection or manual date pickers */}
+                  {viewingSlotsLoading ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-sm text-muted-foreground">Loading available times...</span>
+                    </div>
+                  ) : viewingSlots.length > 0 ? (
+                    <div className="space-y-2">
+                      <Label>Select a Time Slot *</Label>
+                      <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+                        {viewingSlots.map((slot) => (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            onClick={() => setSelectedSlotId(selectedSlotId === slot.id ? null : slot.id)}
+                            className={`flex items-center gap-3 rounded-lg border p-3 text-left text-sm transition-colors ${
+                              selectedSlotId === slot.id
+                                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                : 'hover:border-primary/50'
+                            }`}
+                          >
+                            <Calendar className="h-4 w-4 text-primary shrink-0" />
+                            <span className="font-medium">{formatSlotDate(slot.startTime)}</span>
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="text-muted-foreground">{formatSlotTime(slot.startTime, slot.endTime)}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Selecting a pre-set time slot will automatically confirm your viewing.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="vf-date1">Preferred Date & Time *</Label>
+                        <Input
+                          id="vf-date1"
+                          type="datetime-local"
+                          value={viewingForm.preferredDate1}
+                          onChange={(e) =>
+                            setViewingForm((f) => ({ ...f, preferredDate1: e.target.value }))
+                          }
+                        />
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vf-date2">2nd Choice (Optional)</Label>
-                      <Input
-                        id="vf-date2"
-                        type="datetime-local"
-                        value={viewingForm.preferredDate2}
-                        onChange={(e) =>
-                          setViewingForm((f) => ({ ...f, preferredDate2: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vf-date3">3rd Choice (Optional)</Label>
-                      <Input
-                        id="vf-date3"
-                        type="datetime-local"
-                        value={viewingForm.preferredDate3}
-                        onChange={(e) =>
-                          setViewingForm((f) => ({ ...f, preferredDate3: e.target.value }))
-                        }
-                      />
-                    </div>
-                  </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="vf-date2">2nd Choice (Optional)</Label>
+                          <Input
+                            id="vf-date2"
+                            type="datetime-local"
+                            value={viewingForm.preferredDate2}
+                            onChange={(e) =>
+                              setViewingForm((f) => ({ ...f, preferredDate2: e.target.value }))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="vf-date3">3rd Choice (Optional)</Label>
+                          <Input
+                            id="vf-date3"
+                            type="datetime-local"
+                            value={viewingForm.preferredDate3}
+                            onChange={(e) =>
+                              setViewingForm((f) => ({ ...f, preferredDate3: e.target.value }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <div className="space-y-1.5">
                     <Label htmlFor="vf-message">Message (Optional)</Label>
@@ -544,7 +620,7 @@ export default function ApplyPage() {
                       !viewingForm.lastName ||
                       !viewingForm.email ||
                       !viewingForm.phone ||
-                      !viewingForm.preferredDate1
+                      (!selectedSlotId && !viewingForm.preferredDate1)
                     }
                   >
                     {viewingSubmitting ? (
@@ -552,6 +628,8 @@ export default function ApplyPage() {
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Submitting...
                       </>
+                    ) : selectedSlotId ? (
+                      'Confirm Viewing'
                     ) : (
                       'Request Viewing'
                     )}
@@ -566,10 +644,13 @@ export default function ApplyPage() {
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-6 w-6 text-green-500 shrink-0" />
                 <div>
-                  <h3 className="font-semibold text-green-800">Viewing Request Submitted!</h3>
+                  <h3 className="font-semibold text-green-800">
+                    {selectedSlotId ? 'Viewing Confirmed!' : 'Viewing Request Submitted!'}
+                  </h3>
                   <p className="text-sm text-green-700">
-                    The property manager will contact you to confirm a viewing time.
-                    You can still continue with your application below.
+                    {selectedSlotId
+                      ? 'Your viewing has been confirmed. You\'ll receive a confirmation email shortly. You can still continue with your application below.'
+                      : 'The property manager will contact you to confirm a viewing time. You can still continue with your application below.'}
                   </p>
                 </div>
               </div>

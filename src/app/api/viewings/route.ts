@@ -2,6 +2,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { notifyViewingRequested } from '@/lib/notifications';
 
+// GET /api/viewings?propertyId=X - Get available viewing slots for a property (public)
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const propertyId = searchParams.get('propertyId');
+
+    if (!propertyId) {
+      return NextResponse.json(
+        { success: false, error: 'Property ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const slots = await prisma.viewingSlot.findMany({
+      where: {
+        propertyId,
+        isActive: true,
+        startTime: { gte: new Date() },
+      },
+      select: {
+        id: true,
+        startTime: true,
+        endTime: true,
+      },
+      orderBy: { startTime: 'asc' },
+    });
+
+    return NextResponse.json({ success: true, data: slots });
+  } catch (error) {
+    console.error('Error fetching viewing slots:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to load viewing slots' },
+      { status: 500 }
+    );
+  }
+}
+
 // POST /api/viewings - Submit a viewing request (public)
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +47,7 @@ export async function POST(request: NextRequest) {
     const {
       propertyId,
       unitId,
+      slotId,
       firstName,
       lastName,
       email,
@@ -20,8 +58,8 @@ export async function POST(request: NextRequest) {
       preferredDate3,
     } = body;
 
-    // Validate required fields
-    if (!propertyId || !firstName || !lastName || !email || !phone || !preferredDate1) {
+    // Validate required fields - if slotId is provided, preferredDate1 is not required
+    if (!propertyId || !firstName || !lastName || !email || !phone || (!preferredDate1 && !slotId)) {
       return NextResponse.json(
         { success: false, error: 'Name, email, phone, property, and at least one preferred date are required' },
         { status: 400 }
@@ -84,19 +122,37 @@ export async function POST(request: NextRequest) {
       unitNumber = unit?.unitNumber;
     }
 
+    // If a slot was selected, look up the slot's time to use as preferredDate1
+    let slotTime: Date | null = null;
+    if (slotId) {
+      const slot = await prisma.viewingSlot.findFirst({
+        where: { id: slotId, propertyId, isActive: true },
+      });
+      if (!slot) {
+        return NextResponse.json(
+          { success: false, error: 'Selected time slot is no longer available' },
+          { status: 400 }
+        );
+      }
+      slotTime = slot.startTime;
+    }
+
     // Create the viewing request
     const viewing = await prisma.viewingRequest.create({
       data: {
         propertyId,
         unitId: unitId || null,
+        slotId: slotId || null,
         firstName,
         lastName,
         email,
         phone,
         message: message || null,
-        preferredDate1: new Date(preferredDate1),
+        preferredDate1: slotTime || new Date(preferredDate1),
         preferredDate2: preferredDate2 ? new Date(preferredDate2) : null,
         preferredDate3: preferredDate3 ? new Date(preferredDate3) : null,
+        // Auto-confirm if booked via a slot
+        ...(slotId ? { confirmedDate: slotTime, status: 'CONFIRMED' } : {}),
       },
     });
 
