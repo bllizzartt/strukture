@@ -71,11 +71,21 @@ interface ViewingRequest {
 interface ViewingSlot {
   id: string;
   propertyId: string;
+  dayOfWeek: number;
   startTime: string;
   endTime: string;
   isActive: boolean;
   property: { id: string; name: string };
   _count: { bookings: number };
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function formatTimeString(time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
 interface PropertyOption {
@@ -129,13 +139,6 @@ function formatDate(dateStr: string): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-  });
-}
-
-function formatTime(dateStr: string): string {
-  return new Date(dateStr).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
   });
 }
 
@@ -686,7 +689,7 @@ function TimeSlotsTab() {
   // Add slot form
   const [showAddForm, setShowAddForm] = useState(false);
   const [addPropertyId, setAddPropertyId] = useState('');
-  const [newSlots, setNewSlots] = useState([{ date: '', startTime: '', endTime: '' }]);
+  const [newSlots, setNewSlots] = useState([{ dayOfWeek: '', startTime: '', endTime: '' }]);
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -729,7 +732,7 @@ function TimeSlotsTab() {
   }, [fetchSlots]);
 
   const addSlotRow = () => {
-    setNewSlots((prev) => [...prev, { date: '', startTime: '', endTime: '' }]);
+    setNewSlots((prev) => [...prev, { dayOfWeek: '', startTime: '', endTime: '' }]);
   };
 
   const removeSlotRow = (index: number) => {
@@ -749,10 +752,11 @@ function TimeSlotsTab() {
     }
 
     const validSlots = newSlots
-      .filter((s) => s.date && s.startTime && s.endTime)
+      .filter((s) => s.dayOfWeek !== '' && s.startTime && s.endTime)
       .map((s) => ({
-        startTime: `${s.date}T${s.startTime}`,
-        endTime: `${s.date}T${s.endTime}`,
+        dayOfWeek: parseInt(s.dayOfWeek, 10),
+        startTime: s.startTime,
+        endTime: s.endTime,
       }));
 
     if (validSlots.length === 0) {
@@ -772,7 +776,7 @@ function TimeSlotsTab() {
       const result = await res.json();
       if (result.success) {
         setShowAddForm(false);
-        setNewSlots([{ date: '', startTime: '', endTime: '' }]);
+        setNewSlots([{ dayOfWeek: '', startTime: '', endTime: '' }]);
         setAddPropertyId('');
         fetchSlots();
       } else {
@@ -816,8 +820,7 @@ function TimeSlotsTab() {
     slotsByProperty[slot.propertyId].slots.push(slot);
   }
 
-  // Separate future vs past slots
-  const now = new Date();
+  // Separate active vs inactive slots
 
   return (
     <>
@@ -852,8 +855,8 @@ function TimeSlotsTab() {
               Add Available Time Slots
             </CardTitle>
             <CardDescription>
-              Set times when prospective tenants can schedule a viewing. Visitors will see these
-              slots and pick one when requesting a viewing.
+              Set recurring weekly times when prospective tenants can schedule a viewing. Visitors
+              will see these slots and pick one when requesting a viewing.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -885,13 +888,23 @@ function TimeSlotsTab() {
                 <div key={index} className="flex items-end gap-3">
                   <div className="space-y-1 flex-1">
                     {index === 0 && (
-                      <Label className="text-xs text-muted-foreground">Date</Label>
+                      <Label className="text-xs text-muted-foreground">Day of Week</Label>
                     )}
-                    <Input
-                      type="date"
-                      value={slot.date}
-                      onChange={(e) => updateSlotRow(index, 'date', e.target.value)}
-                    />
+                    <Select
+                      value={slot.dayOfWeek}
+                      onValueChange={(val) => updateSlotRow(index, 'dayOfWeek', val)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select day" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DAY_NAMES.map((name, i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1 w-[130px]">
                     {index === 0 && (
@@ -990,12 +1003,8 @@ function TimeSlotsTab() {
       ) : (
         <div className="space-y-6">
           {Object.entries(slotsByProperty).map(([propertyId, group]) => {
-            const futureSlots = group.slots.filter(
-              (s) => new Date(s.startTime) >= now && s.isActive
-            );
-            const pastSlots = group.slots.filter(
-              (s) => new Date(s.startTime) < now || !s.isActive
-            );
+            const activeSlots = group.slots.filter((s) => s.isActive);
+            const inactiveSlots = group.slots.filter((s) => !s.isActive);
 
             return (
               <Card key={propertyId}>
@@ -1005,13 +1014,13 @@ function TimeSlotsTab() {
                     {group.propertyName}
                   </CardTitle>
                   <CardDescription>
-                    {futureSlots.length} upcoming slot{futureSlots.length !== 1 ? 's' : ''}
+                    {activeSlots.length} active slot{activeSlots.length !== 1 ? 's' : ''}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {futureSlots.length > 0 && (
+                  {activeSlots.length > 0 && (
                     <div className="space-y-2">
-                      {futureSlots.map((slot) => (
+                      {activeSlots.map((slot) => (
                         <div
                           key={slot.id}
                           className="flex items-center justify-between rounded-lg border p-3"
@@ -1020,10 +1029,10 @@ function TimeSlotsTab() {
                             <Calendar className="h-4 w-4 text-primary shrink-0" />
                             <div>
                               <p className="text-sm font-medium">
-                                {formatDate(slot.startTime)}
+                                {DAY_NAMES[slot.dayOfWeek]}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                                {formatTimeString(slot.startTime)} - {formatTimeString(slot.endTime)}
                               </p>
                             </div>
                           </div>
@@ -1047,13 +1056,13 @@ function TimeSlotsTab() {
                     </div>
                   )}
 
-                  {pastSlots.length > 0 && (
+                  {inactiveSlots.length > 0 && (
                     <div className="mt-4">
                       <p className="text-xs text-muted-foreground mb-2">
-                        Past / Inactive ({pastSlots.length})
+                        Inactive ({inactiveSlots.length})
                       </p>
                       <div className="space-y-1">
-                        {pastSlots.slice(0, 3).map((slot) => (
+                        {inactiveSlots.slice(0, 3).map((slot) => (
                           <div
                             key={slot.id}
                             className="flex items-center justify-between rounded-lg border border-dashed p-2 opacity-50"
@@ -1061,8 +1070,8 @@ function TimeSlotsTab() {
                             <div className="flex items-center gap-2">
                               <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                               <span className="text-xs text-muted-foreground">
-                                {formatDate(slot.startTime)} &middot;{' '}
-                                {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                                {DAY_NAMES[slot.dayOfWeek]} &middot;{' '}
+                                {formatTimeString(slot.startTime)} - {formatTimeString(slot.endTime)}
                               </span>
                             </div>
                             {slot._count.bookings > 0 && (
@@ -1072,9 +1081,9 @@ function TimeSlotsTab() {
                             )}
                           </div>
                         ))}
-                        {pastSlots.length > 3 && (
+                        {inactiveSlots.length > 3 && (
                           <p className="text-xs text-muted-foreground pl-6">
-                            +{pastSlots.length - 3} more
+                            +{inactiveSlots.length - 3} more
                           </p>
                         )}
                       </div>
