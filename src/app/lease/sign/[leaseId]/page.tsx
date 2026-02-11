@@ -16,6 +16,7 @@ import {
   Home,
   Clock,
   Shield,
+  ArrowLeft,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
@@ -246,11 +247,12 @@ export default function LeaseSignPage() {
   }
 
   if (!lease) {
+    const fallbackUrl = session?.user?.role === 'LANDLORD' ? '/landlord' : session?.user?.role === 'TENANT' ? '/tenant' : '/';
     return (
       <div className="min-h-screen flex flex-col">
         <header className="border-b">
           <div className="container flex h-16 items-center">
-            <Link href="/" className="flex items-center gap-2">
+            <Link href={fallbackUrl} className="flex items-center gap-2">
               <Building2 className="h-8 w-8 text-primary" />
               <span className="text-2xl font-bold">Strukture</span>
             </Link>
@@ -278,6 +280,8 @@ export default function LeaseSignPage() {
   const alreadySigned = isCurrentUserTenant ? !!lease.tenantSignedAt : isCurrentUserLandlord ? !!lease.landlordSignedAt : false;
   const leaseFullySigned = !!lease.tenantSignedAt && !!lease.landlordSignedAt;
 
+  const dashboardUrl = isCurrentUserLandlord ? '/landlord' : isCurrentUserTenant ? '/tenant' : '/';
+
   const monthlyRent = typeof lease.monthlyRent === 'string' ? parseFloat(lease.monthlyRent) : lease.monthlyRent;
   const depositAmount = typeof lease.depositAmount === 'string' ? parseFloat(lease.depositAmount) : lease.depositAmount;
   const landlordName = `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`;
@@ -288,7 +292,7 @@ export default function LeaseSignPage() {
       {/* Header */}
       <header className="border-b bg-white">
         <div className="container flex h-16 items-center">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={dashboardUrl} className="flex items-center gap-2">
             <Building2 className="h-8 w-8 text-primary" />
             <span className="text-2xl font-bold">Strukture</span>
           </Link>
@@ -307,35 +311,53 @@ export default function LeaseSignPage() {
 
           {/* Status Banner */}
           {leaseFullySigned && (
-            <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-              <div className="flex items-center gap-2">
-                <Check className="h-5 w-5 text-green-600" />
-                <p className="text-green-800 font-medium">This lease has been fully signed and is now active.</p>
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Check className="h-5 w-5 text-green-600" />
+                  <p className="text-green-800 font-medium">This lease has been fully signed and is now active.</p>
+                </div>
+                {sessionStatus === 'authenticated' && (
+                  <>
+                    {pdfData ? (
+                      <PdfDownloadButton
+                        data={pdfData}
+                        fileName={`lease-${lease.unit.property.name}-unit-${lease.unit.unitNumber}.pdf`}
+                      />
+                    ) : (
+                      <Button onClick={fetchPdfData} variant="outline" size="sm">
+                        <FileText className="mr-2 h-4 w-4" />
+                        Download PDF
+                      </Button>
+                    )}
+                  </>
+                )}
               </div>
               {sessionStatus === 'authenticated' && (
-                <>
-                  {pdfData ? (
-                    <PdfDownloadButton
-                      data={pdfData}
-                      fileName={`lease-${lease.unit.property.name}-unit-${lease.unit.unitNumber}.pdf`}
-                    />
-                  ) : (
-                    <Button onClick={fetchPdfData} variant="outline" size="sm">
-                      <FileText className="mr-2 h-4 w-4" />
-                      Download PDF
-                    </Button>
-                  )}
-                </>
+                <Link href={dashboardUrl}>
+                  <Button variant="outline" className="w-full">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Return to Dashboard
+                  </Button>
+                </Link>
               )}
             </div>
           )}
 
           {alreadySigned && !leaseFullySigned && (
-            <div className="flex items-center gap-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <Check className="h-5 w-5 text-blue-600" />
-              <p className="text-blue-800 font-medium">
-                You have signed this lease. Waiting for the {isCurrentUserTenant ? 'landlord' : 'tenant'} to sign.
-              </p>
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
+              <div className="flex items-center gap-2">
+                <Check className="h-5 w-5 text-blue-600" />
+                <p className="text-blue-800 font-medium">
+                  You have signed this lease. Waiting for the {isCurrentUserTenant ? 'landlord' : 'tenant'} to sign.
+                </p>
+              </div>
+              <Link href={dashboardUrl}>
+                <Button variant="outline" className="w-full">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Return to Dashboard
+                </Button>
+              </Link>
             </div>
           )}
 
