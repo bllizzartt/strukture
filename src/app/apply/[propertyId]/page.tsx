@@ -40,6 +40,60 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { getStripe } from '@/lib/stripe/client';
 
 const SCREENING_FEE = 45;
+const MAX_IMAGE_DIMENSION = 1600; // max width/height for uploaded images
+const IMAGE_QUALITY = 0.8; // JPEG compression quality
+
+/**
+ * Compress image files to reduce upload size and avoid server body limits.
+ * Non-image files (PDFs, etc.) are returned as-is.
+ */
+async function compressFileIfImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size < 500_000) {
+    return file; // Skip non-images and small files (<500KB)
+  }
+
+  return new Promise<File>((resolve) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+
+      // Scale down if larger than max dimension
+      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+        const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob || blob.size >= file.size) {
+            resolve(file); // Keep original if compression didn't help
+          } else {
+            resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
+          }
+        },
+        'image/jpeg',
+        IMAGE_QUALITY
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file); // Return original on error
+    };
+    img.src = url;
+  });
+}
 
 interface PropertyInfo {
   id: string;
@@ -339,18 +393,21 @@ export default function ApplyPage() {
         }
       });
 
-      // Add files
-      Object.entries(files).forEach(([key, file]) => {
+      // Add files — compress images before uploading to stay under server limits
+      for (const [key, file] of Object.entries(files)) {
         if (file) {
-          formData.append(key, file);
+          const compressed = await compressFileIfImage(file);
+          formData.append(key, compressed);
         }
-      });
+      }
 
-      // Add supporting documents
-      supportingDocs.forEach((doc, index) => {
-        formData.append(`supportingDoc_${index}`, doc.file);
-        formData.append(`supportingDocLabel_${index}`, doc.label);
-      });
+      // Add supporting documents — compress images
+      for (let i = 0; i < supportingDocs.length; i++) {
+        const doc = supportingDocs[i];
+        const compressed = await compressFileIfImage(doc.file);
+        formData.append(`supportingDoc_${i}`, compressed);
+        formData.append(`supportingDocLabel_${i}`, doc.label);
+      }
       formData.append('supportingDocCount', String(supportingDocs.length));
 
       const res = await fetch(`/api/applications/${propertyId}`, {
@@ -358,7 +415,18 @@ export default function ApplyPage() {
         body: formData,
       });
 
-      const result = await res.json();
+      if (!res.ok && res.status === 413) {
+        setError('Your uploaded files are too large. Please reduce file sizes (use smaller images or compressed PDFs) and try again.');
+        return;
+      }
+
+      let result;
+      try {
+        result = await res.json();
+      } catch {
+        setError(`Server error (${res.status}). Your files may be too large — try compressing images or using smaller PDFs.`);
+        return;
+      }
 
       if (result.success) {
         setApplicationId(result.data.id);
@@ -366,8 +434,8 @@ export default function ApplyPage() {
       } else {
         setError(result.error || 'Failed to submit application');
       }
-    } catch {
-      setError('Failed to submit application. Please try again.');
+    } catch (err) {
+      setError(err instanceof Error ? `Failed to submit: ${err.message}` : 'Failed to submit application. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
