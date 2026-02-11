@@ -42,6 +42,7 @@ export async function GET(
                 city: true,
                 state: true,
                 zipCode: true,
+                logoUrl: true,
                 owner: {
                   select: {
                     id: true,
@@ -118,6 +119,7 @@ export async function GET(
         landlordSignedAt: lease.landlordSignedAt?.toISOString() || undefined,
         templateContent: lease.template?.content || undefined,
         tenantDob: lease.tenant.dateOfBirth?.toISOString() || undefined,
+        logoUrl: property.logoUrl || undefined,
       },
     });
   } catch (error) {

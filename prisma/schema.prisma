@@ -244,6 +244,9 @@ model Property {
   parkingSpaces   Int?
   amenities       String[]       @default([])
 
+  // Branding
+  logoUrl         String?        @db.Text
+
   // License/Permit tracking
   licenseNumber   String?
   licenseExpiry   DateTime?
