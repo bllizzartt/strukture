@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
         landlordName: owner.firstName,
         landlordTelegramId: owner.telegramNotifications ? owner.telegramChatId : null,
         entryPermission: maintenanceRequest.entryPermission,
+        photoUrls: maintenanceRequest.photoUrls,
       });
     } catch (error) {
       console.error('Failed to send maintenance notifications:', error);

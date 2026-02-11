@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Wrench, Clock, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -189,14 +188,19 @@ export default function TenantMaintenanceDetailPage() {
                   <p className="text-sm text-muted-foreground mb-2">Photos</p>
                   <div className="grid grid-cols-3 gap-2">
                     {request.photoUrls.map((url, index) => (
-                      <div key={index} className="relative aspect-square">
-                        <Image
+                      <a
+                        key={index}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative aspect-square block"
+                      >
+                        <img
                           src={url}
                           alt={`Photo ${index + 1}`}
-                          fill
-                          className="rounded-lg object-cover"
+                          className="rounded-lg object-cover h-full w-full"
                         />
-                      </div>
+                      </a>
                     ))}
                   </div>
                 </div>

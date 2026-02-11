@@ -26,6 +26,7 @@ export interface MaintenanceNotification {
   propertyName: string;
   unitNumber: string;
   entryPermission: boolean;
+  photoUrls?: string[];
 }
 
 export interface PaymentNotification {
@@ -152,6 +153,28 @@ ${escapeMarkdown(data.description.substring(0, 500))}${data.description.length >
       parse_mode: 'Markdown',
       link_preview_options: { is_disabled: true },
     });
+
+    // Send photos if available
+    if (data.photoUrls && data.photoUrls.length > 0) {
+      for (const photoUrl of data.photoUrls.slice(0, 3)) {
+        try {
+          if (photoUrl.startsWith('data:')) {
+            // Convert base64 data URL to buffer for upload
+            const base64Data = photoUrl.split(',')[1];
+            const buffer = Buffer.from(base64Data, 'base64');
+            await bot.telegram.sendPhoto(chatId, {
+              source: buffer,
+              filename: 'maintenance-photo.jpg',
+            });
+          } else {
+            await bot.telegram.sendPhoto(chatId, photoUrl);
+          }
+        } catch (photoError) {
+          console.error('Failed to send Telegram photo:', photoError);
+        }
+      }
+    }
+
     return true;
   } catch (error) {
     console.error('Failed to send Telegram notification:', error);

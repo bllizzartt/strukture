@@ -43,6 +43,7 @@ export interface MaintenanceNotificationData {
   landlordName: string;
   landlordTelegramId?: string | null;
   entryPermission: boolean;
+  photoUrls?: string[];
 }
 
 /**
@@ -75,6 +76,7 @@ export async function notifyMaintenanceSubmitted(
       propertyName: data.propertyName,
       unitNumber: data.unitNumber,
       entryPermission: data.entryPermission,
+      photoUrls: data.photoUrls,
     });
   }
 

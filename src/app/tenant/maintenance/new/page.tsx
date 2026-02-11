@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Camera, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,10 +29,51 @@ import {
   type CreateMaintenanceRequestInput,
 } from '@/lib/validators/maintenance';
 
+const MAX_PHOTOS = 5;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB original limit
+const MAX_DIMENSION = 1200; // Resize large images
+const JPEG_QUALITY = 0.8;
+
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+
+        // Scale down if needed
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIMENSION) / width);
+            width = MAX_DIMENSION;
+          } else {
+            width = Math.round((width * MAX_DIMENSION) / height);
+            height = MAX_DIMENSION;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function NewMaintenanceRequestPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -56,6 +97,45 @@ export default function NewMaintenanceRequestPage() {
   const selectedCategory = watch('category');
   const selectedPriority = watch('priority');
   const entryPermission = watch('entryPermission');
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const remaining = MAX_PHOTOS - photoPreviews.length;
+    if (remaining <= 0) {
+      toast({ variant: 'destructive', title: 'Limit reached', description: `Maximum ${MAX_PHOTOS} photos allowed` });
+      return;
+    }
+
+    const newPhotos: string[] = [];
+    for (let i = 0; i < Math.min(files.length, remaining); i++) {
+      const file = files[i];
+      if (file.size > MAX_FILE_SIZE) {
+        toast({ variant: 'destructive', title: 'File too large', description: `${file.name} exceeds 5MB limit` });
+        continue;
+      }
+      if (!file.type.startsWith('image/')) {
+        toast({ variant: 'destructive', title: 'Invalid file', description: `${file.name} is not an image` });
+        continue;
+      }
+      const base64 = await compressImage(file);
+      newPhotos.push(base64);
+    }
+
+    const updated = [...photoPreviews, ...newPhotos];
+    setPhotoPreviews(updated);
+    setValue('photoUrls', updated);
+
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removePhoto = (index: number) => {
+    const updated = photoPreviews.filter((_, i) => i !== index);
+    setPhotoPreviews(updated);
+    setValue('photoUrls', updated);
+  };
 
   const onSubmit = async (data: CreateMaintenanceRequestInput) => {
     setIsSubmitting(true);
@@ -196,6 +276,51 @@ export default function NewMaintenanceRequestPage() {
               {errors.description && (
                 <p className="text-sm text-destructive">{errors.description.message}</p>
               )}
+            </div>
+
+            {/* Photo Upload */}
+            <div className="space-y-2">
+              <Label>Photos (Optional)</Label>
+              <p className="text-xs text-muted-foreground">
+                Upload up to {MAX_PHOTOS} photos to help describe the issue
+              </p>
+              <div className="flex flex-wrap gap-3 mt-2">
+                {photoPreviews.map((src, index) => (
+                  <div key={index} className="relative h-24 w-24 rounded-lg overflow-hidden border">
+                    <img
+                      src={src}
+                      alt={`Photo ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(index)}
+                      className="absolute top-1 right-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black/80"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {photoPreviews.length < MAX_PHOTOS && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isSubmitting}
+                    className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-muted-foreground/25 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                  >
+                    <Camera className="h-5 w-5" />
+                    <span className="text-xs">Add Photo</span>
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoSelect}
+                className="hidden"
+              />
             </div>
 
             <div className="space-y-4 p-4 bg-muted rounded-lg">
