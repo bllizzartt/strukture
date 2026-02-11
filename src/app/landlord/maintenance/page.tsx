@@ -142,7 +142,7 @@ export default function LandlordMaintenancePage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Open Requests</CardTitle>
@@ -272,53 +272,51 @@ export default function LandlordMaintenancePage() {
                 >
                   <div
                     className={cn(
-                      'flex items-start justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors',
+                      'p-4 border rounded-lg hover:bg-muted/50 transition-colors space-y-2',
                       request.priority === 'EMERGENCY' && 'border-red-200 bg-red-50'
                     )}
                   >
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
                         <h3 className="font-medium">{request.title}</h3>
                         <span
                           className={cn(
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0',
                             maintenancePriorityColors[request.priority]
                           )}
                         >
                           {maintenancePriorityLabels[request.priority]}
                         </span>
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-1">
-                        {request.description}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          {request.tenant.firstName} {request.tenant.lastName}
-                        </span>
-                        <span>•</span>
-                        <span>
-                          {request.unit.property.name} - Unit {request.unit.unitNumber}
-                        </span>
-                        <span>•</span>
-                        <span>{maintenanceCategoryLabels[request.category]}</span>
-                        <span>•</span>
-                        <span>{format(new Date(request.createdAt), 'MMM d, yyyy')}</span>
-                      </div>
-                      {request.entryPermission && (
-                        <span className="inline-flex items-center text-xs text-green-600">
-                          Entry permitted
-                        </span>
-                      )}
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0',
+                          maintenanceStatusColors[request.status]
+                        )}
+                      >
+                        {maintenanceStatusLabels[request.status]}
+                      </span>
                     </div>
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-                        maintenanceStatusColors[request.status]
-                      )}
-                    >
-                      {maintenanceStatusLabels[request.status]}
-                    </span>
+                    <p className="text-sm text-muted-foreground line-clamp-1">
+                      {request.description}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {request.tenant.firstName} {request.tenant.lastName}
+                      </span>
+                      <span className="hidden sm:inline">•</span>
+                      <span>{request.unit.property.name} - Unit {request.unit.unitNumber}</span>
+                      <span className="hidden sm:inline">•</span>
+                      <span>{maintenanceCategoryLabels[request.category]}</span>
+                      <span className="hidden sm:inline">•</span>
+                      <span>{format(new Date(request.createdAt), 'MMM d, yyyy')}</span>
+                    </div>
+                    {request.entryPermission && (
+                      <span className="inline-flex items-center text-xs text-green-600">
+                        Entry permitted
+                      </span>
+                    )}
                   </div>
                 </Link>
               ))}
