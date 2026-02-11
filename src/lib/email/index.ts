@@ -383,6 +383,147 @@ export async function sendLeaseFullySignedEmail(data: LeaseFullySignedData): Pro
   }
 }
 
+// ==================== Application Decision Emails ====================
+
+export interface ApplicationApprovedData {
+  applicantName: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  landlordName: string;
+}
+
+/**
+ * Send application approved email to applicant
+ */
+export async function sendApplicationApprovedEmail(
+  to: string,
+  data: ApplicationApprovedData
+): Promise<{ success: boolean; error?: string }> {
+  const resend = getResend();
+  if (!resend) return { success: false, error: 'RESEND_API_KEY is not configured' };
+
+  const content = `
+    <h2>Application Approved!</h2>
+    <p>Dear ${data.applicantName},</p>
+    <p>Great news! Your rental application for <strong>${data.propertyName}</strong> has been <strong>approved</strong>.</p>
+
+    <div class="info-box success">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Status:</span>
+        <span class="value" style="color: #10b981;">Approved</span>
+      </div>
+    </div>
+
+    <h3>What happens next?</h3>
+    <ol>
+      <li>Your property manager will prepare a lease agreement</li>
+      <li>You will receive a separate email with a link to review and sign the lease electronically</li>
+      <li>Once both parties sign, the lease becomes active and you can prepare for move-in</li>
+    </ol>
+
+    <p>If you have any questions, please contact ${data.landlordName}.</p>
+
+    <p>Congratulations,<br>The Strukture Team</p>
+  `;
+
+  try {
+    const { data: result, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Application Approved - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    if (error) {
+      console.error(`Failed to send application approved email to ${to}:`, error);
+      return { success: false, error: error.message || 'Resend API error' };
+    }
+    console.log(`Application approved email sent to ${to} (id: ${result?.id})`);
+    return { success: true };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Failed to send application approved email to ${to}:`, error);
+    return { success: false, error: msg };
+  }
+}
+
+export interface ApplicationDeniedData {
+  applicantName: string;
+  propertyName: string;
+  propertyAddress: string;
+  unitNumber?: string;
+  landlordName: string;
+}
+
+/**
+ * Send application denied email to applicant
+ */
+export async function sendApplicationDeniedEmail(
+  to: string,
+  data: ApplicationDeniedData
+): Promise<{ success: boolean; error?: string }> {
+  const resend = getResend();
+  if (!resend) return { success: false, error: 'RESEND_API_KEY is not configured' };
+
+  const content = `
+    <h2>Application Update</h2>
+    <p>Dear ${data.applicantName},</p>
+    <p>Thank you for your interest in <strong>${data.propertyName}</strong>. After careful review of your application, we regret to inform you that your application has <strong>not been approved</strong> at this time.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}${data.unitNumber ? ` - Unit ${data.unitNumber}` : ''}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Status:</span>
+        <span class="value" style="color: #ef4444;">Not Approved</span>
+      </div>
+    </div>
+
+    <div class="highlight">
+      <p><strong>Adverse Action Notice:</strong> If your application was denied in whole or in part due to information obtained from a consumer reporting agency, you have the right to obtain a free copy of your consumer report and to dispute any inaccurate information. You may contact the agency that provided the report for more details.</p>
+    </div>
+
+    <p>We appreciate your time and wish you the best in your housing search.</p>
+
+    <p>If you have any questions, please contact ${data.landlordName}.</p>
+
+    <p>Regards,<br>The Strukture Team</p>
+  `;
+
+  try {
+    const { data: result, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `Application Update - ${data.propertyName}${data.unitNumber ? ` Unit ${data.unitNumber}` : ''}`,
+      html: baseTemplate(content),
+    });
+    if (error) {
+      console.error(`Failed to send application denied email to ${to}:`, error);
+      return { success: false, error: error.message || 'Resend API error' };
+    }
+    console.log(`Application denied email sent to ${to} (id: ${result?.id})`);
+    return { success: true };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Failed to send application denied email to ${to}:`, error);
+    return { success: false, error: msg };
+  }
+}
+
 // ==================== Email Types ====================
 
 export interface WelcomeEmailData {

@@ -18,6 +18,7 @@ import {
   XCircle,
   Clock,
   Eye,
+  EyeOff,
   DollarSign,
   Phone,
   Mail,
@@ -25,6 +26,7 @@ import {
   ShieldAlert,
   Search,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -121,6 +123,8 @@ export default function ApplicationDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [reviewNotes, setReviewNotes] = useState('');
+  const [revealedSSN, setRevealedSSN] = useState<string | null>(null);
+  const [ssnLoading, setSSNLoading] = useState(false);
 
   const fetchApplication = useCallback(async () => {
     try {
@@ -163,6 +167,31 @@ export default function ApplicationDetailPage() {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to update application' });
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleRevealSSN = async () => {
+    if (revealedSSN) {
+      setRevealedSSN(null);
+      return;
+    }
+    setSSNLoading(true);
+    try {
+      const res = await fetch(`/api/landlord/applications/${appId}/decrypt-ssn`, {
+        method: 'POST',
+      });
+      const result = await res.json();
+      if (result.success) {
+        setRevealedSSN(result.data.ssn);
+        // Auto-hide after 30 seconds for security
+        setTimeout(() => setRevealedSSN(null), 30000);
+      } else {
+        toast({ variant: 'destructive', title: 'Error', description: result.error });
+      }
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to retrieve SSN' });
+    } finally {
+      setSSNLoading(false);
     }
   };
 
@@ -308,7 +337,37 @@ export default function ApplicationDetailPage() {
                   label="Date of Birth"
                   value={app.dateOfBirth ? new Date(app.dateOfBirth).toLocaleDateString() : null}
                 />
-                <InfoRow label="SSN" value={app.ssn4 ? `***-**-${app.ssn4}` : null} />
+                {app.ssn4 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">SSN</p>
+                    <div className="flex items-center gap-2">
+                      <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                      <p className="text-sm font-mono">
+                        {revealedSSN || `***-**-${app.ssn4}`}
+                      </p>
+                      <button
+                        onClick={handleRevealSSN}
+                        disabled={ssnLoading}
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                        title={revealedSSN ? 'Hide SSN' : 'Reveal full SSN for screening'}
+                      >
+                        {ssnLoading ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : revealedSSN ? (
+                          <EyeOff className="h-3 w-3" />
+                        ) : (
+                          <Eye className="h-3 w-3" />
+                        )}
+                        {revealedSSN ? 'Hide' : 'Reveal'}
+                      </button>
+                    </div>
+                    {revealedSSN && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Auto-hides in 30s. Access logged for compliance.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {app.emergencyContactName && (
