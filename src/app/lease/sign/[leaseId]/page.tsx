@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Eraser,
   Building2,
-  Calendar,
   DollarSign,
   FileText,
   Home,
@@ -27,12 +26,8 @@ import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import type { LeaseDocumentData } from '@/components/lease/lease-document';
 
-const PDFDownloadLink = dynamic(
-  () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
-  { ssr: false }
-);
-const LeaseDocumentLazy = dynamic(
-  () => import('@/components/lease/lease-document').then((mod) => ({ default: mod.LeaseDocument })),
+const PdfDownloadButton = dynamic(
+  () => import('@/components/lease/pdf-download-button').then((mod) => ({ default: mod.PdfDownloadButton })),
   { ssr: false }
 );
 
@@ -155,7 +150,6 @@ export default function LeaseSignPage() {
   const [agreedToEsign, setAgreedToEsign] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [pdfData, setPdfData] = useState<LeaseDocumentData | null>(null);
-  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
   const leaseId = params.leaseId as string;
 
@@ -187,7 +181,6 @@ export default function LeaseSignPage() {
   }, [lease]);
 
   const fetchPdfData = async () => {
-    setIsLoadingPdf(true);
     try {
       const response = await fetch(`/api/lease/${leaseId}/pdf`);
       const result = await response.json();
@@ -196,8 +189,6 @@ export default function LeaseSignPage() {
       }
     } catch {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to load PDF data' });
-    } finally {
-      setIsLoadingPdf(false);
     }
   };
 
@@ -323,23 +314,16 @@ export default function LeaseSignPage() {
               </div>
               {sessionStatus === 'authenticated' && (
                 <>
-                  {!pdfData ? (
-                    <Button onClick={fetchPdfData} disabled={isLoadingPdf} variant="outline" size="sm">
-                      {isLoadingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                  {pdfData ? (
+                    <PdfDownloadButton
+                      data={pdfData}
+                      fileName={`lease-${lease.unit.property.name}-unit-${lease.unit.unitNumber}.pdf`}
+                    />
+                  ) : (
+                    <Button onClick={fetchPdfData} variant="outline" size="sm">
+                      <FileText className="mr-2 h-4 w-4" />
                       Download PDF
                     </Button>
-                  ) : (
-                    <PDFDownloadLink
-                      document={<LeaseDocumentLazy data={pdfData} />}
-                      fileName={`lease-${lease.unit.property.name}-unit-${lease.unit.unitNumber}.pdf`}
-                    >
-                      {({ loading }) => (
-                        <Button variant="outline" size="sm" disabled={loading}>
-                          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                          {loading ? 'Generating...' : 'Download PDF'}
-                        </Button>
-                      )}
-                    </PDFDownloadLink>
                   )}
                 </>
               )}
