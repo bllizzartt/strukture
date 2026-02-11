@@ -53,6 +53,11 @@ interface Application {
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  PENDING_PAYMENT: {
+    label: 'Pending Payment',
+    color: 'bg-orange-100 text-orange-800',
+    icon: <Clock className="h-3.5 w-3.5" />,
+  },
   SUBMITTED: {
     label: 'Submitted',
     color: 'bg-blue-100 text-blue-800',
