@@ -29,6 +29,7 @@ export async function GET(
             firstName: true,
             lastName: true,
             phone: true,
+            dateOfBirth: true,
           },
         },
         unit: {
@@ -52,6 +53,11 @@ export async function GET(
                 },
               },
             },
+          },
+        },
+        template: {
+          select: {
+            content: true,
           },
         },
       },
@@ -110,6 +116,8 @@ export async function GET(
         tenantSignedAt: lease.tenantSignedAt?.toISOString() || undefined,
         landlordSignature: lease.landlordSignature || undefined,
         landlordSignedAt: lease.landlordSignedAt?.toISOString() || undefined,
+        templateContent: lease.template?.content || undefined,
+        tenantDob: lease.tenant.dateOfBirth?.toISOString() || undefined,
       },
     });
   } catch (error) {
