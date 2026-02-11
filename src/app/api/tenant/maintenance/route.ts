@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { createMaintenanceRequestSchema } from '@/lib/validators/maintenance';
+import { notifyMaintenanceSubmitted } from '@/lib/notifications';
 
 // GET /api/tenant/maintenance - List tenant's maintenance requests
 export async function GET(request: NextRequest) {
@@ -152,7 +153,31 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // TODO: Send notification to landlord (Telegram/Email)
+    // Send notifications to landlord (Email, Telegram, In-app)
+    const owner = maintenanceRequest.unit.property.owner;
+    const tenantFullName = `${maintenanceRequest.tenant.firstName} ${maintenanceRequest.tenant.lastName}`;
+    try {
+      await notifyMaintenanceSubmitted({
+        requestId: maintenanceRequest.id,
+        title: maintenanceRequest.title,
+        description: maintenanceRequest.description,
+        category: maintenanceRequest.category,
+        priority: maintenanceRequest.priority,
+        tenantId: session.user.id,
+        tenantName: tenantFullName,
+        tenantEmail: session.user.email || '',
+        propertyId: maintenanceRequest.unit.property.id,
+        propertyName: maintenanceRequest.unit.property.name,
+        unitNumber: maintenanceRequest.unit.unitNumber,
+        landlordId: owner.id,
+        landlordEmail: owner.email,
+        landlordName: owner.firstName,
+        landlordTelegramId: owner.telegramNotifications ? owner.telegramChatId : null,
+        entryPermission: maintenanceRequest.entryPermission,
+      });
+    } catch (error) {
+      console.error('Failed to send maintenance notifications:', error);
+    }
 
     return NextResponse.json(
       {

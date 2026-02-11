@@ -3,7 +3,27 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { sendTenantSignedEmail, sendLeaseFullySignedEmail } from '@/lib/email';
+import * as telegramService from '@/lib/telegram';
 import { createHash } from 'crypto';
+
+// Helper to create in-app notification
+async function createLeaseNotification(userId: string, title: string, message: string, link: string) {
+  try {
+    await prisma.notification.create({
+      data: {
+        userId,
+        type: 'IN_APP',
+        category: 'LEASE_EXPIRING', // closest category for lease events
+        title,
+        message,
+        actionUrl: link,
+        sentAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error('Failed to create lease notification:', error);
+  }
+}
 
 function sha256(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -201,13 +221,37 @@ export async function POST(
       // Notify landlord that tenant has signed (if not yet fully signed)
       if (!shouldActivate) {
         const tenantName = session.user.name || `${lease.tenant.firstName} ${lease.tenant.lastName}`;
+        const landlordFullName = `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`;
+
+        // Email
         await sendTenantSignedEmail(lease.unit.property.owner.email, {
-          landlordName: `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`,
+          landlordName: landlordFullName,
           tenantName,
           propertyName: lease.unit.property.name,
           unitNumber: lease.unit.unitNumber,
           leaseId,
         });
+
+        // Telegram
+        const landlord = await prisma.user.findUnique({
+          where: { id: lease.unit.property.ownerId },
+          select: { telegramChatId: true, telegramNotifications: true },
+        });
+        if (landlord?.telegramNotifications && landlord.telegramChatId) {
+          await telegramService.sendNotification(
+            landlord.telegramChatId,
+            'Tenant Signed Lease',
+            `${tenantName} has signed the lease for ${lease.unit.property.name} - Unit ${lease.unit.unitNumber}. Your counter-signature is needed.`
+          );
+        }
+
+        // In-app notification for landlord
+        await createLeaseNotification(
+          lease.unit.property.ownerId,
+          'Tenant Signed Lease',
+          `${tenantName} has signed the lease for ${lease.unit.property.name} - Unit ${lease.unit.unitNumber}. Please counter-sign.`,
+          `/lease/sign/${leaseId}`
+        );
       }
 
       if (shouldActivate) {
@@ -269,6 +313,7 @@ export async function POST(
       const landlordFullName = `${leaseData.unit.property.owner.firstName} ${leaseData.unit.property.owner.lastName}`;
       const tenantFullName = `${leaseData.tenant.firstName} ${leaseData.tenant.lastName}`;
 
+      // Email both parties
       await sendLeaseFullySignedEmail({
         landlordName: landlordFullName,
         landlordEmail: leaseData.unit.property.owner.email,
@@ -281,6 +326,38 @@ export async function POST(
         endDate: leaseData.endDate.toISOString(),
         leaseId: id,
       });
+
+      // Telegram to landlord
+      const landlord = await prisma.user.findUnique({
+        where: { id: leaseData.unit.property.ownerId },
+        select: { telegramChatId: true, telegramNotifications: true },
+      });
+      if (landlord?.telegramNotifications && landlord.telegramChatId) {
+        await telegramService.sendLeaseNotification(landlord.telegramChatId, {
+          leaseId: id,
+          tenantName: tenantFullName,
+          propertyName: leaseData.unit.property.name,
+          unitNumber: leaseData.unit.unitNumber,
+          startDate: leaseData.startDate.toLocaleDateString(),
+          endDate: leaseData.endDate.toLocaleDateString(),
+          monthlyRent: Number(leaseData.monthlyRent),
+        });
+      }
+
+      // In-app notifications for both parties
+      const leaseMsg = `Lease for ${leaseData.unit.property.name} - Unit ${leaseData.unit.unitNumber} is now active.`;
+      await createLeaseNotification(
+        leaseData.unit.property.ownerId,
+        'Lease Activated',
+        `${leaseMsg} Tenant: ${tenantFullName}. Unit marked as occupied.`,
+        `/landlord/leases`
+      );
+      await createLeaseNotification(
+        leaseData.tenantId,
+        'Lease Activated',
+        `${leaseMsg} Welcome to your new home!`,
+        `/tenant/dashboard`
+      );
     }
 
     const actionMap = { tenant: 'TENANT_SIGN_LEASE', co_tenant: 'CO_TENANT_SIGN_LEASE', landlord: 'LANDLORD_SIGN_LEASE' };
