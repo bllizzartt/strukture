@@ -272,6 +272,97 @@ export async function sendTenantSignedEmail(to: string, data: TenantSignedData):
   }
 }
 
+// ==================== Lease Fully Signed (to both parties) ====================
+
+export interface LeaseFullySignedData {
+  landlordName: string;
+  landlordEmail: string;
+  tenantName: string;
+  tenantEmail: string;
+  propertyName: string;
+  unitNumber: string;
+  propertyAddress: string;
+  startDate: string;
+  endDate: string;
+  leaseId: string;
+}
+
+/**
+ * Send signed lease notification to both landlord and tenant
+ */
+export async function sendLeaseFullySignedEmail(data: LeaseFullySignedData): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const leaseUrl = `${APP_URL}/lease/sign/${data.leaseId}`;
+
+  const makeContent = (recipientName: string, isLandlord: boolean) => `
+    <h2>Lease Agreement Fully Signed</h2>
+    <p>Dear ${recipientName},</p>
+    <p>Great news! The lease agreement for <strong>${data.propertyName} - Unit ${data.unitNumber}</strong> has been signed by both parties and is now <strong>active</strong>.</p>
+
+    <div class="info-box success">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName} - Unit ${data.unitNumber}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Landlord:</span>
+        <span class="value">${data.landlordName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Tenant:</span>
+        <span class="value">${data.tenantName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Lease Period:</span>
+        <span class="value">${formatDate(data.startDate)} - ${formatDate(data.endDate)}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Status:</span>
+        <span class="value" style="color: #10b981;">Active</span>
+      </div>
+    </div>
+
+    <p>You can download a PDF copy of the signed lease from the link below.</p>
+
+    <a href="${leaseUrl}" class="button">View Signed Lease</a>
+
+    <div class="highlight">
+      <p><strong>Important:</strong> This lease was signed electronically in compliance with the ESIGN Act (15 U.S.C. §§ 7001-7006) and the New Mexico Uniform Electronic Transactions Act (NMSA 1978, §§ 14-16-1 to 14-16-21). A complete audit trail of all signatures, including timestamps, IP addresses, and consent records, has been securely stored.</p>
+    </div>
+
+    ${isLandlord ? '<p>The unit has been automatically marked as occupied in your dashboard.</p>' : '<p>Welcome to your new home! You can access your tenant portal to manage your lease, submit maintenance requests, and pay rent.</p>'}
+  `;
+
+  try {
+    // Send to landlord
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: data.landlordEmail,
+      subject: `Lease Active - ${data.propertyName} Unit ${data.unitNumber}`,
+      html: baseTemplate(makeContent(data.landlordName, true)),
+    });
+
+    // Send to tenant
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: data.tenantEmail,
+      subject: `Lease Active - ${data.propertyName} Unit ${data.unitNumber}`,
+      html: baseTemplate(makeContent(data.tenantName, false)),
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to send lease fully signed email:', error);
+    return false;
+  }
+}
+
 // ==================== Email Types ====================
 
 export interface WelcomeEmailData {

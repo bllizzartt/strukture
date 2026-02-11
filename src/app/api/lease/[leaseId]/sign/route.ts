@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
-import { sendTenantSignedEmail } from '@/lib/email';
+import { sendTenantSignedEmail, sendLeaseFullySignedEmail } from '@/lib/email';
+import { createHash } from 'crypto';
+
+function sha256(data: string): string {
+  return createHash('sha256').update(data).digest('hex');
+}
 
 // POST /api/lease/[leaseId]/sign - Sign a lease (tenant or landlord)
 export async function POST(
@@ -19,7 +24,7 @@ export async function POST(
     }
 
     const { leaseId } = await params;
-    const { signature } = await request.json();
+    const { signature, consentText } = await request.json();
 
     if (!signature) {
       return NextResponse.json(
@@ -38,12 +43,19 @@ export async function POST(
               select: {
                 ownerId: true,
                 name: true,
+                addressLine1: true,
+                city: true,
+                state: true,
+                zipCode: true,
                 owner: {
                   select: { firstName: true, lastName: true, email: true },
                 },
               },
             },
           },
+        },
+        template: {
+          select: { content: true },
         },
       },
     });
@@ -56,6 +68,7 @@ export async function POST(
     }
 
     const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
     const now = new Date();
 
     // Determine if this is tenant or landlord signing (match by ID or email)
@@ -63,7 +76,6 @@ export async function POST(
     const matchesLandlord = session.user.id === lease.unit.property.ownerId;
 
     // Determine signing role - prioritize based on what still needs signing
-    // This prevents a user who matches both (e.g., testing) from signing the wrong one
     let signingAs: 'tenant' | 'landlord' | null = null;
     if (matchesTenant && !lease.tenantSignedAt) {
       signingAs = 'tenant';
@@ -81,7 +93,7 @@ export async function POST(
       );
     }
 
-    // Also check session role as fallback - if user role is TENANT, sign as tenant
+    // Also check session role as fallback
     if (!signingAs && session.user.role === 'TENANT' && !lease.tenantSignedAt) {
       signingAs = 'tenant';
     } else if (!signingAs && session.user.role === 'LANDLORD' && !lease.landlordSignedAt) {
@@ -94,6 +106,52 @@ export async function POST(
         { status: 403 }
       );
     }
+
+    // Generate hashes for audit trail
+    const signatureHash = sha256(signature);
+    const documentHash = lease.template?.content
+      ? sha256(lease.template.content)
+      : sha256(`lease-${leaseId}-${lease.startDate}-${lease.endDate}-${lease.monthlyRent}`);
+
+    const signerName = session.user.name || `${session.user.email}`;
+    const signerEmail = session.user.email || '';
+    const signerRole = signingAs === 'tenant' ? 'TENANT' : 'LANDLORD';
+
+    const defaultConsentText = `I, ${signerName}, hereby consent to sign this Residential Lease Agreement electronically. I acknowledge that my electronic signature is legally binding under the Electronic Signatures in Global and National Commerce Act (ESIGN Act, 15 U.S.C. §§ 7001-7006) and the New Mexico Uniform Electronic Transactions Act (NMSA 1978, §§ 14-16-1 to 14-16-21). I have read and agree to all terms and conditions of this lease agreement.`;
+
+    // Create SignatureAuditLog entries
+    await prisma.signatureAuditLog.createMany({
+      data: [
+        {
+          leaseId,
+          userId: session.user.id,
+          action: 'CONSENT_GIVEN',
+          signerName,
+          signerEmail,
+          signerRole,
+          ipAddress: ip,
+          userAgent,
+          consentText: consentText || defaultConsentText,
+          consentAccepted: true,
+          signatureHash: null,
+          documentHash,
+        },
+        {
+          leaseId,
+          userId: session.user.id,
+          action: 'SIGNATURE_APPLIED',
+          signerName,
+          signerEmail,
+          signerRole,
+          ipAddress: ip,
+          userAgent,
+          consentText: null,
+          consentAccepted: false,
+          signatureHash,
+          documentHash,
+        },
+      ],
+    });
 
     if (signingAs === 'tenant') {
       // If tenant matched by email but has a different user ID, update the lease
@@ -118,6 +176,24 @@ export async function POST(
         await prisma.unit.update({
           where: { id: lease.unitId },
           data: { status: 'OCCUPIED' },
+        });
+
+        // Send fully signed email to both parties
+        const propertyAddress = `${lease.unit.property.addressLine1}, ${lease.unit.property.city}, ${lease.unit.property.state} ${lease.unit.property.zipCode}`;
+        const landlordFullName = `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`;
+        const tenantFullName = signerName;
+
+        await sendLeaseFullySignedEmail({
+          landlordName: landlordFullName,
+          landlordEmail: lease.unit.property.owner.email,
+          tenantName: tenantFullName,
+          tenantEmail: lease.tenant.email,
+          propertyName: lease.unit.property.name,
+          unitNumber: lease.unit.unitNumber,
+          propertyAddress,
+          startDate: lease.startDate.toISOString(),
+          endDate: lease.endDate.toISOString(),
+          leaseId,
         });
       }
 
@@ -158,6 +234,24 @@ export async function POST(
           where: { id: lease.unitId },
           data: { status: 'OCCUPIED' },
         });
+
+        // Send fully signed email to both parties
+        const propertyAddress = `${lease.unit.property.addressLine1}, ${lease.unit.property.city}, ${lease.unit.property.state} ${lease.unit.property.zipCode}`;
+        const landlordFullName = signerName;
+        const tenantFullName = `${lease.tenant.firstName} ${lease.tenant.lastName}`;
+
+        await sendLeaseFullySignedEmail({
+          landlordName: landlordFullName,
+          landlordEmail: lease.unit.property.owner.email,
+          tenantName: tenantFullName,
+          tenantEmail: lease.tenant.email,
+          propertyName: lease.unit.property.name,
+          unitNumber: lease.unit.unitNumber,
+          propertyAddress,
+          startDate: lease.startDate.toISOString(),
+          endDate: lease.endDate.toISOString(),
+          leaseId,
+        });
       }
     }
 
@@ -171,6 +265,7 @@ export async function POST(
         entityType: 'Lease',
         entityId: leaseId,
         ipAddress: ip,
+        userAgent,
       },
     });
 

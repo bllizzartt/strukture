@@ -198,6 +198,8 @@ model User {
   notifications         Notification[]
   sessions              Session[]
   auditLogs             AuditLog[]
+  leaseTemplates        LeaseTemplate[]
+  signatureAuditLogs    SignatureAuditLog[]
 
   @@index([email])
   @@index([role])
@@ -323,6 +325,7 @@ model Lease {
 
   // Lease document
   leaseDocumentId       String?
+  templateId            String?
 
   // Signatures
   tenantSignature       String?      @db.Text
@@ -355,15 +358,18 @@ model Lease {
   // Relations
   tenant                User         @relation("TenantLease", fields: [tenantId], references: [id])
   unit                  Unit         @relation(fields: [unitId], references: [id])
+  template              LeaseTemplate? @relation(fields: [templateId], references: [id])
   previousLease         Lease?       @relation("LeaseRenewal", fields: [previousLeaseId], references: [id])
   renewedLease          Lease?       @relation("LeaseRenewal")
   payments              Payment[]
   documents             Document[]
+  signatureAuditLogs    SignatureAuditLog[]
 
   @@index([tenantId])
   @@index([unitId])
   @@index([status])
   @@index([endDate])
+  @@index([templateId])
 }
 
 model StoredPaymentMethod {
@@ -868,4 +874,71 @@ model EmailTemplate {
   // Timestamps
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
+}
+
+// ==================== Digital Lease Templates ====================
+
+model LeaseTemplate {
+  id                    String       @id @default(cuid())
+  ownerId               String
+
+  // Template info
+  name                  String       // e.g. "Standard 12-Month Residential Lease"
+  description           String?
+
+  // Template content - rich text with {{placeholders}}
+  content               String       @db.Text
+
+  // Whether template is available for use
+  isActive              Boolean      @default(true)
+
+  // Timestamps
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  // Relations
+  owner                 User         @relation(fields: [ownerId], references: [id])
+  leases                Lease[]
+
+  @@index([ownerId])
+  @@index([isActive])
+}
+
+// ==================== Signature Audit Trail (UETA/ESIGN Compliance) ====================
+
+model SignatureAuditLog {
+  id                    String       @id @default(cuid())
+  leaseId               String
+  userId                String
+
+  // What action was taken
+  action                String       // CONSENT_GIVEN, DOCUMENT_VIEWED, SIGNATURE_APPLIED, DOCUMENT_DOWNLOADED
+
+  // Signer identity
+  signerName            String
+  signerEmail           String
+  signerRole            String       // TENANT or LANDLORD
+
+  // Legal compliance fields
+  ipAddress             String
+  userAgent             String       @db.Text
+  timestamp             DateTime     @default(now())
+
+  // Consent record
+  consentText           String?      @db.Text  // Exact text of consent shown to user
+  consentAccepted       Boolean      @default(false)
+
+  // Signature data
+  signatureHash         String?      // SHA-256 hash of signature data for integrity verification
+
+  // Document state
+  documentHash          String?      // SHA-256 hash of document content at time of signing
+
+  // Relations
+  lease                 Lease        @relation(fields: [leaseId], references: [id])
+  user                  User         @relation(fields: [userId], references: [id])
+
+  @@index([leaseId])
+  @@index([userId])
+  @@index([timestamp])
 }
