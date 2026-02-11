@@ -201,6 +201,9 @@ model User {
   leaseTemplates        LeaseTemplate[]
   signatureAuditLogs    SignatureAuditLog[]
   vendors               Vendor[]
+  sentMessages          Message[]          @relation("MessageSender")
+  receivedMessages      Message[]          @relation("MessageRecipient")
+  insurancePolicies     InsurancePolicy[]  @relation("TenantInsurance")
 
   @@index([email])
   @@index([role])
@@ -369,6 +372,8 @@ model Lease {
   documents             Document[]
   signatureAuditLogs    SignatureAuditLog[]
   occupants             LeaseOccupant[]
+  inspections           Inspection[]
+  insurancePolicies     InsurancePolicy[]
 
   @@index([tenantId])
   @@index([unitId])
@@ -1010,4 +1015,98 @@ model Vendor {
 
   @@index([ownerId])
   @@index([isActive])
+}
+
+// ==================== Tenant-Landlord Messaging ====================
+
+model Message {
+  id                    String       @id @default(cuid())
+  conversationKey       String       // e.g. "lease:{leaseId}" or "maintenance:{requestId}"
+  senderId              String
+  recipientId           String
+
+  content               String       @db.Text
+  readAt                DateTime?
+
+  createdAt             DateTime     @default(now())
+
+  sender                User         @relation("MessageSender", fields: [senderId], references: [id])
+  recipient             User         @relation("MessageRecipient", fields: [recipientId], references: [id])
+
+  @@index([conversationKey])
+  @@index([recipientId, readAt])
+  @@index([createdAt])
+}
+
+// ==================== Move-in/Move-out Inspections ====================
+
+model Inspection {
+  id                    String       @id @default(cuid())
+  leaseId               String
+  type                  String       // MOVE_IN or MOVE_OUT
+  status                String       @default("DRAFT") // DRAFT, COMPLETED
+
+  inspectedBy           String?
+  inspectedAt           DateTime?
+  notes                 String?      @db.Text
+
+  // Deposit reconciliation (MOVE_OUT only)
+  depositHeld           Decimal?     @db.Decimal(10, 2)
+  deductionTotal        Decimal?     @db.Decimal(10, 2)
+  refundAmount          Decimal?     @db.Decimal(10, 2)
+  deductionNotes        String?      @db.Text
+
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  lease                 Lease        @relation(fields: [leaseId], references: [id])
+  items                 InspectionItem[]
+
+  @@index([leaseId])
+  @@index([type])
+}
+
+model InspectionItem {
+  id                    String       @id @default(cuid())
+  inspectionId          String
+  room                  String       // e.g. "Kitchen", "Bathroom", "Living Room"
+  item                  String       // e.g. "Walls", "Floor", "Ceiling", "Appliances"
+  condition             String       // GOOD, FAIR, POOR, DAMAGED
+  notes                 String?
+  photoUrls             String[]     @default([])
+  estimatedCost         Decimal?     @db.Decimal(10, 2)
+
+  createdAt             DateTime     @default(now())
+
+  inspection            Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([inspectionId])
+}
+
+// ==================== Tenant Insurance ====================
+
+model InsurancePolicy {
+  id                    String       @id @default(cuid())
+  leaseId               String
+  tenantId              String
+
+  provider              String
+  policyNumber          String
+  coverageAmount        Decimal      @db.Decimal(10, 2)
+  startDate             DateTime
+  endDate               DateTime
+  documentUrl           String?      @db.Text
+
+  isVerified            Boolean      @default(false)
+  verifiedAt            DateTime?
+
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  lease                 Lease        @relation(fields: [leaseId], references: [id])
+  tenant                User         @relation("TenantInsurance", fields: [tenantId], references: [id])
+
+  @@index([leaseId])
+  @@index([tenantId])
+  @@index([endDate])
 }

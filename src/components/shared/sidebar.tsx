@@ -20,6 +20,11 @@ import {
   X,
   ClipboardList,
   Eye,
+  MessageSquare,
+  DollarSign,
+  ClipboardCheck,
+  Shield,
+  FolderOpen,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -50,6 +55,21 @@ const tenantNavItems: NavItem[] = [
     title: 'Lease',
     href: '/tenant/lease',
     icon: <FileText className="h-5 w-5" />,
+  },
+  {
+    title: 'Messages',
+    href: '/tenant/messages',
+    icon: <MessageSquare className="h-5 w-5" />,
+  },
+  {
+    title: 'Insurance',
+    href: '/tenant/insurance',
+    icon: <Shield className="h-5 w-5" />,
+  },
+  {
+    title: 'Documents',
+    href: '/tenant/documents',
+    icon: <FolderOpen className="h-5 w-5" />,
   },
   {
     title: 'Profile',
@@ -90,6 +110,11 @@ const landlordNavItems: NavItem[] = [
     icon: <Eye className="h-5 w-5" />,
   },
   {
+    title: 'Financials',
+    href: '/landlord/financial',
+    icon: <DollarSign className="h-5 w-5" />,
+  },
+  {
     title: 'Payments',
     href: '/landlord/payments',
     icon: <CreditCard className="h-5 w-5" />,
@@ -98,6 +123,21 @@ const landlordNavItems: NavItem[] = [
     title: 'Maintenance',
     href: '/landlord/maintenance',
     icon: <Wrench className="h-5 w-5" />,
+  },
+  {
+    title: 'Inspections',
+    href: '/landlord/inspections',
+    icon: <ClipboardCheck className="h-5 w-5" />,
+  },
+  {
+    title: 'Messages',
+    href: '/landlord/messages',
+    icon: <MessageSquare className="h-5 w-5" />,
+  },
+  {
+    title: 'Insurance',
+    href: '/landlord/insurance',
+    icon: <Shield className="h-5 w-5" />,
   },
   {
     title: 'Settings',
@@ -155,7 +195,7 @@ export function Sidebar({ role }: SidebarProps) {
             href={item.href}
             className={cn(
               'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-              pathname === item.href
+              pathname === item.href || pathname.startsWith(item.href + '/')
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
             )}
