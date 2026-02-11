@@ -266,36 +266,38 @@ export default function MaintenanceDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="space-y-3">
         <Link href="/landlord/maintenance">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold">{request.title}</h1>
-            <span
-              className={cn(
-                'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-                maintenancePriorityColors[request.priority]
-              )}
-            >
-              {maintenancePriorityLabels[request.priority]}
-            </span>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold">{request.title}</h1>
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  maintenancePriorityColors[request.priority]
+                )}
+              >
+                {maintenancePriorityLabels[request.priority]}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              {request.unit.property.name} - Unit {request.unit.unitNumber}
+            </p>
           </div>
-          <p className="text-muted-foreground">
-            {request.unit.property.name} - Unit {request.unit.unitNumber}
-          </p>
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-3 py-1 text-sm font-medium self-start',
+              maintenanceStatusColors[request.status]
+            )}
+          >
+            {maintenanceStatusLabels[request.status]}
+          </span>
         </div>
-        <span
-          className={cn(
-            'inline-flex items-center rounded-full px-3 py-1 text-sm font-medium',
-            maintenanceStatusColors[request.status]
-          )}
-        >
-          {maintenanceStatusLabels[request.status]}
-        </span>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
