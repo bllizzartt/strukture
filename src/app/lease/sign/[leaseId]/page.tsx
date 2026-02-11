@@ -32,6 +32,21 @@ const PdfDownloadButton = dynamic(
   { ssr: false }
 );
 
+interface LeaseOccupant {
+  id: string;
+  type: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  dateOfBirth: string | null;
+  relationship: string | null;
+  userId: string | null;
+  signature: string | null;
+  signedAt: string | null;
+  signedIp: string | null;
+}
+
 interface LeaseData {
   id: string;
   status: string;
@@ -82,6 +97,7 @@ interface LeaseData {
     name: string;
     content: string;
   } | null;
+  occupants?: LeaseOccupant[];
 }
 
 function ordinal(n: number): string {
@@ -128,7 +144,7 @@ function populateTemplate(content: string, lease: LeaseData): string {
     '{{pet_deposit}}': petDeposit ? formatCurrency(petDeposit) : 'N/A',
     '{{pet_rent}}': petRent ? formatCurrency(petRent) : 'N/A',
     '{{today_date}}': format(new Date(), 'MM/dd/yyyy'),
-    '{{num_occupants}}': '1', // Default
+    '{{num_occupants}}': String(1 + (lease.occupants?.filter(o => o.type === 'CO_TENANT').length || 0) + (lease.occupants?.filter(o => o.type === 'MINOR').length || 0)),
   };
 
   let populated = content;
@@ -276,11 +292,31 @@ export default function LeaseSignPage() {
   const needsAuth = sessionStatus !== 'authenticated';
   const isCurrentUserTenant = session?.user?.id === lease.tenant.id || session?.user?.email === lease.tenant.email;
   const isCurrentUserLandlord = session?.user?.email === lease.unit.property.owner.email;
-  const canSign = isCurrentUserTenant || isCurrentUserLandlord;
-  const alreadySigned = isCurrentUserTenant ? !!lease.tenantSignedAt : isCurrentUserLandlord ? !!lease.landlordSignedAt : false;
-  const leaseFullySigned = !!lease.tenantSignedAt && !!lease.landlordSignedAt;
+  const coTenants = lease.occupants?.filter(o => o.type === 'CO_TENANT') || [];
+  const minorOccupants = lease.occupants?.filter(o => o.type === 'MINOR') || [];
+  const matchingCoTenant = coTenants.find(
+    o => o.userId === session?.user?.id || o.email === session?.user?.email
+  );
+  const isCurrentUserCoTenant = !!matchingCoTenant;
+  const canSign = isCurrentUserTenant || isCurrentUserLandlord || isCurrentUserCoTenant;
+  const alreadySigned = isCurrentUserTenant
+    ? !!lease.tenantSignedAt
+    : isCurrentUserLandlord
+    ? !!lease.landlordSignedAt
+    : isCurrentUserCoTenant
+    ? !!matchingCoTenant?.signedAt
+    : false;
+  const allCoTenantsSigned = coTenants.every(ct => !!ct.signedAt);
+  const leaseFullySigned = !!lease.tenantSignedAt && !!lease.landlordSignedAt && allCoTenantsSigned;
+  const waitingFor = !lease.tenantSignedAt
+    ? 'primary tenant'
+    : !lease.landlordSignedAt
+    ? 'landlord'
+    : !allCoTenantsSigned
+    ? 'remaining co-tenant(s)'
+    : null;
 
-  const dashboardUrl = isCurrentUserLandlord ? '/landlord' : isCurrentUserTenant ? '/tenant' : '/';
+  const dashboardUrl = isCurrentUserLandlord ? '/landlord' : (isCurrentUserTenant || isCurrentUserCoTenant) ? '/tenant' : '/';
 
   const monthlyRent = typeof lease.monthlyRent === 'string' ? parseFloat(lease.monthlyRent) : lease.monthlyRent;
   const depositAmount = typeof lease.depositAmount === 'string' ? parseFloat(lease.depositAmount) : lease.depositAmount;
@@ -349,7 +385,7 @@ export default function LeaseSignPage() {
               <div className="flex items-center gap-2">
                 <Check className="h-5 w-5 text-blue-600" />
                 <p className="text-blue-800 font-medium">
-                  You have signed this lease. Waiting for the {isCurrentUserTenant ? 'landlord' : 'tenant'} to sign.
+                  You have signed this lease. Waiting for the {waitingFor} to sign.
                 </p>
               </div>
               <Link href={dashboardUrl}>
@@ -632,6 +668,11 @@ export default function LeaseSignPage() {
           <Card>
             <CardHeader>
               <CardTitle>Signatures</CardTitle>
+              {coTenants.length > 0 && (
+                <CardDescription>
+                  All adult tenants must sign per New Mexico law (NMSA {'\u00A7'} 47-8-20)
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-2">
@@ -648,7 +689,7 @@ export default function LeaseSignPage() {
                   )}
                 </div>
                 <div className="p-4 border rounded-lg">
-                  <p className="text-sm text-muted-foreground mb-1">Tenant</p>
+                  <p className="text-sm text-muted-foreground mb-1">Primary Tenant</p>
                   <p className="font-medium">
                     {lease.tenant.firstName !== 'Pending' ? `${lease.tenant.firstName} ${lease.tenant.lastName}` : lease.tenant.email}
                   </p>
@@ -661,9 +702,54 @@ export default function LeaseSignPage() {
                     <p className="text-sm text-muted-foreground mt-2">Pending signature</p>
                   )}
                 </div>
+                {coTenants.map((ct) => (
+                  <div key={ct.id} className="p-4 border rounded-lg">
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Co-Tenant{ct.relationship ? ` (${ct.relationship})` : ''}
+                    </p>
+                    <p className="font-medium">{ct.firstName} {ct.lastName}</p>
+                    {ct.signedAt ? (
+                      <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                        <Check className="h-4 w-4" />
+                        Signed on {format(new Date(ct.signedAt), 'MMM d, yyyy \'at\' h:mm a')}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mt-2">Pending signature</p>
+                    )}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
+
+          {/* Minor Occupants (listed but do not sign) */}
+          {minorOccupants.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Minor Occupants</CardTitle>
+                <CardDescription>Minors under 18 listed on this lease</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {minorOccupants.map((minor) => (
+                    <div key={minor.id} className="p-3 border rounded-lg">
+                      <p className="font-medium">{minor.firstName} {minor.lastName}</p>
+                      {minor.dateOfBirth && (
+                        <p className="text-sm text-muted-foreground">
+                          DOB: {format(new Date(minor.dateOfBirth), 'MM/dd/yyyy')}
+                        </p>
+                      )}
+                      {minor.relationship && (
+                        <p className="text-sm text-muted-foreground">
+                          Relationship: {minor.relationship}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Auth Required */}
           {needsAuth && !leaseFullySigned && (

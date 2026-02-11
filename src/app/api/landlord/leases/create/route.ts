@@ -5,9 +5,29 @@ import { prisma } from '@/lib/db';
 import { sendLeaseInviteEmail } from '@/lib/email';
 import { z } from 'zod';
 
+const coTenantSchema = z.object({
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
+  email: z.string().email('Valid email is required'),
+  phone: z.string().optional(),
+  dateOfBirth: z.string().optional(),
+  relationship: z.string().optional(),
+});
+
+const minorOccupantSchema = z.object({
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
+  dateOfBirth: z.string().min(1, 'Date of birth is required for minors'),
+  relationship: z.string().optional(),
+});
+
 const createLeaseSchema = z.object({
   unitId: z.string(),
   tenantEmail: z.string().email(),
+  tenantFirstName: z.string().optional(),
+  tenantLastName: z.string().optional(),
+  tenantPhone: z.string().optional(),
+  tenantDob: z.string().optional(),
   startDate: z.string(),
   endDate: z.string(),
   monthlyRent: z.number().positive(),
@@ -21,6 +41,8 @@ const createLeaseSchema = z.object({
   leaseDocumentId: z.string().nullable().optional(),
   templateId: z.string().nullable().optional(),
   numOccupants: z.number().int().min(1).default(1),
+  coTenants: z.array(coTenantSchema).optional().default([]),
+  minorOccupants: z.array(minorOccupantSchema).optional().default([]),
 });
 
 // POST /api/landlord/leases/create - Create a lease and send invite to tenant
@@ -83,17 +105,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if tenant exists, if not we'll create the lease with just the email
-    // The tenant will create their account when they click the invite link
+    // Check if primary tenant exists, if not create a placeholder
     let tenant = await prisma.user.findUnique({
       where: { email: data.tenantEmail.toLowerCase() },
     });
 
-    // If tenant doesn't exist, create a placeholder account
-    // They'll set their password when they click the invite link
     if (!tenant) {
       const { hash } = await import('bcryptjs');
-      // Generate a random temporary password - tenant will set their own via the invite flow
       const tempPassword = crypto.randomUUID();
       const passwordHash = await hash(tempPassword, 12);
 
@@ -101,11 +119,19 @@ export async function POST(request: NextRequest) {
         data: {
           email: data.tenantEmail.toLowerCase(),
           passwordHash,
-          firstName: 'Pending',
-          lastName: 'Tenant',
+          firstName: data.tenantFirstName || 'Pending',
+          lastName: data.tenantLastName || 'Tenant',
+          phone: data.tenantPhone || null,
+          dateOfBirth: data.tenantDob ? new Date(data.tenantDob) : null,
           role: 'TENANT',
           status: 'PENDING',
         },
+      });
+    } else if (data.tenantDob && !tenant.dateOfBirth) {
+      // Update DOB if provided and not already set
+      await prisma.user.update({
+        where: { id: tenant.id },
+        data: { dateOfBirth: new Date(data.tenantDob) },
       });
     }
 
@@ -140,6 +166,60 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Create co-tenant occupant records and placeholder user accounts
+    for (const coTenant of data.coTenants) {
+      let coTenantUser = await prisma.user.findUnique({
+        where: { email: coTenant.email.toLowerCase() },
+      });
+
+      if (!coTenantUser) {
+        const { hash } = await import('bcryptjs');
+        const tempPassword = crypto.randomUUID();
+        const passwordHash = await hash(tempPassword, 12);
+
+        coTenantUser = await prisma.user.create({
+          data: {
+            email: coTenant.email.toLowerCase(),
+            passwordHash,
+            firstName: coTenant.firstName,
+            lastName: coTenant.lastName,
+            phone: coTenant.phone || null,
+            dateOfBirth: coTenant.dateOfBirth ? new Date(coTenant.dateOfBirth) : null,
+            role: 'TENANT',
+            status: 'PENDING',
+          },
+        });
+      }
+
+      await prisma.leaseOccupant.create({
+        data: {
+          leaseId: lease.id,
+          type: 'CO_TENANT',
+          firstName: coTenant.firstName,
+          lastName: coTenant.lastName,
+          email: coTenant.email.toLowerCase(),
+          phone: coTenant.phone || null,
+          dateOfBirth: coTenant.dateOfBirth ? new Date(coTenant.dateOfBirth) : null,
+          relationship: coTenant.relationship || null,
+          userId: coTenantUser.id,
+        },
+      });
+    }
+
+    // Create minor occupant records
+    for (const minor of data.minorOccupants) {
+      await prisma.leaseOccupant.create({
+        data: {
+          leaseId: lease.id,
+          type: 'MINOR',
+          firstName: minor.firstName,
+          lastName: minor.lastName,
+          dateOfBirth: new Date(minor.dateOfBirth),
+          relationship: minor.relationship || 'Child',
+        },
+      });
+    }
+
     // Update unit status to reserved
     await prisma.unit.update({
       where: { id: data.unitId },
@@ -155,7 +235,7 @@ export async function POST(request: NextRequest) {
     const landlordName = landlord ? `${landlord.firstName} ${landlord.lastName}` : 'Your Landlord';
     const propertyAddress = `${unit.property.addressLine1}, ${unit.property.city}, ${unit.property.state} ${unit.property.zipCode}`;
 
-    // Send invite email to tenant
+    // Send invite email to primary tenant
     await sendLeaseInviteEmail(data.tenantEmail.toLowerCase(), {
       tenantEmail: data.tenantEmail.toLowerCase(),
       landlordName,
@@ -168,6 +248,22 @@ export async function POST(request: NextRequest) {
       endDate: data.endDate,
       leaseId: lease.id,
     });
+
+    // Send invite emails to co-tenants
+    for (const coTenant of data.coTenants) {
+      await sendLeaseInviteEmail(coTenant.email.toLowerCase(), {
+        tenantEmail: coTenant.email.toLowerCase(),
+        landlordName,
+        propertyName: unit.property.name,
+        unitNumber: unit.unitNumber,
+        propertyAddress,
+        monthlyRent: data.monthlyRent,
+        depositAmount: data.depositAmount,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        leaseId: lease.id,
+      });
+    }
 
     // Create audit log
     await prisma.auditLog.create({
@@ -182,6 +278,8 @@ export async function POST(request: NextRequest) {
           startDate: data.startDate,
           endDate: data.endDate,
           monthlyRent: data.monthlyRent,
+          coTenants: data.coTenants.length,
+          minorOccupants: data.minorOccupants.length,
         },
       },
     });
@@ -189,7 +287,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: lease,
-      message: 'Lease created and invite sent to tenant',
+      message: 'Lease created and invite sent to tenant(s)',
     });
   } catch (error) {
     console.error('Error creating lease:', error);

@@ -11,6 +11,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Plus,
+  Trash2,
+  Users,
+  Baby,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +55,22 @@ interface LeaseTemplate {
   description: string | null;
 }
 
+interface CoTenant {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  dateOfBirth: string;
+  relationship: string;
+}
+
+interface MinorOccupant {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  relationship: string;
+}
+
 export default function CreateLeasePage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -72,6 +91,10 @@ export default function CreateLeasePage() {
   // Lease form fields
   const [form, setForm] = useState({
     tenantEmail: '',
+    tenantFirstName: '',
+    tenantLastName: '',
+    tenantPhone: '',
+    tenantDob: '',
     startDate: '',
     endDate: '',
     monthlyRent: '',
@@ -84,6 +107,10 @@ export default function CreateLeasePage() {
     numOccupants: '1',
     additionalTerms: '',
   });
+
+  // Co-tenants and minor occupants
+  const [coTenants, setCoTenants] = useState<CoTenant[]>([]);
+  const [minorOccupants, setMinorOccupants] = useState<MinorOccupant[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -141,6 +168,30 @@ export default function CreateLeasePage() {
     }
   };
 
+  const addCoTenant = () => {
+    setCoTenants([...coTenants, { firstName: '', lastName: '', email: '', phone: '', dateOfBirth: '', relationship: '' }]);
+  };
+
+  const removeCoTenant = (index: number) => {
+    setCoTenants(coTenants.filter((_, i) => i !== index));
+  };
+
+  const updateCoTenant = (index: number, field: keyof CoTenant, value: string) => {
+    setCoTenants(coTenants.map((ct, i) => i === index ? { ...ct, [field]: value } : ct));
+  };
+
+  const addMinor = () => {
+    setMinorOccupants([...minorOccupants, { firstName: '', lastName: '', dateOfBirth: '', relationship: 'Child' }]);
+  };
+
+  const removeMinor = (index: number) => {
+    setMinorOccupants(minorOccupants.filter((_, i) => i !== index));
+  };
+
+  const updateMinor = (index: number, field: keyof MinorOccupant, value: string) => {
+    setMinorOccupants(minorOccupants.map((m, i) => i === index ? { ...m, [field]: value } : m));
+  };
+
   const handleSubmit = async () => {
     if (!selectedUnitId) {
       toast({ variant: 'destructive', title: 'Error', description: 'Please select a property and unit' });
@@ -159,14 +210,38 @@ export default function CreateLeasePage() {
       return;
     }
 
+    // Validate co-tenants
+    for (let i = 0; i < coTenants.length; i++) {
+      const ct = coTenants[i];
+      if (!ct.firstName || !ct.lastName || !ct.email) {
+        toast({ variant: 'destructive', title: 'Error', description: `Co-tenant ${i + 1}: First name, last name, and email are required` });
+        return;
+      }
+    }
+
+    // Validate minors
+    for (let i = 0; i < minorOccupants.length; i++) {
+      const m = minorOccupants[i];
+      if (!m.firstName || !m.lastName || !m.dateOfBirth) {
+        toast({ variant: 'destructive', title: 'Error', description: `Minor occupant ${i + 1}: First name, last name, and date of birth are required` });
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
+      const totalOccupants = 1 + coTenants.length + minorOccupants.length;
+
       const res = await fetch('/api/landlord/leases/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           unitId: selectedUnitId,
           tenantEmail: form.tenantEmail,
+          tenantFirstName: form.tenantFirstName || undefined,
+          tenantLastName: form.tenantLastName || undefined,
+          tenantPhone: form.tenantPhone || undefined,
+          tenantDob: form.tenantDob || undefined,
           startDate: form.startDate,
           endDate: form.endDate,
           monthlyRent: parseFloat(form.monthlyRent),
@@ -176,15 +251,17 @@ export default function CreateLeasePage() {
           rentDueDay: parseInt(form.rentDueDay || '1'),
           petDeposit: form.petDeposit ? parseFloat(form.petDeposit) : null,
           petRent: form.petRent ? parseFloat(form.petRent) : null,
-          numOccupants: parseInt(form.numOccupants || '1'),
+          numOccupants: totalOccupants,
           additionalTerms: form.additionalTerms || null,
           templateId: selectedTemplateId || null,
+          coTenants: coTenants.filter(ct => ct.firstName && ct.email),
+          minorOccupants: minorOccupants.filter(m => m.firstName && m.dateOfBirth),
         }),
       });
 
       const result = await res.json();
       if (result.success) {
-        toast({ title: 'Lease Created', description: 'Lease created and invite sent to tenant.' });
+        toast({ title: 'Lease Created', description: 'Lease created and invite sent to tenant(s).' });
         router.push('/landlord/leases');
       } else {
         toast({ variant: 'destructive', title: 'Error', description: result.error || 'Failed to create lease' });
@@ -397,8 +474,8 @@ export default function CreateLeasePage() {
           <CardHeader>
             <CardTitle>Lease Details</CardTitle>
             <CardDescription>
-              Enter the lease terms. These values will auto-populate into your template.
-              An invite will be sent to the tenant to review and sign digitally.
+              Enter the lease terms and all occupant information. All adult tenants will receive a signing invite.
+              Per New Mexico law (NMSA § 47-8-20), all adult tenants must sign the lease.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -412,11 +489,31 @@ export default function CreateLeasePage() {
               </span>
             </div>
 
-            {/* Tenant Info */}
+            {/* Primary Tenant Info */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-lg">Tenant</h3>
+              <h3 className="font-semibold text-lg">Primary Tenant</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tenantFirstName">First Name</Label>
+                  <Input
+                    id="tenantFirstName"
+                    placeholder="John"
+                    value={form.tenantFirstName}
+                    onChange={(e) => setForm({ ...form, tenantFirstName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tenantLastName">Last Name</Label>
+                  <Input
+                    id="tenantLastName"
+                    placeholder="Doe"
+                    value={form.tenantLastName}
+                    onChange={(e) => setForm({ ...form, tenantLastName: e.target.value })}
+                  />
+                </div>
+              </div>
               <div className="space-y-2">
-                <Label htmlFor="tenantEmail">Tenant Email *</Label>
+                <Label htmlFor="tenantEmail">Email *</Label>
                 <Input
                   id="tenantEmail"
                   type="email"
@@ -425,9 +522,218 @@ export default function CreateLeasePage() {
                   onChange={(e) => setForm({ ...form, tenantEmail: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  An invite will be sent to this email for the tenant to create an account and sign digitally.
+                  A signing invite will be sent to this email.
                 </p>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tenantPhone">Phone</Label>
+                  <Input
+                    id="tenantPhone"
+                    type="tel"
+                    placeholder="(505) 555-0100"
+                    value={form.tenantPhone}
+                    onChange={(e) => setForm({ ...form, tenantPhone: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tenantDob">Date of Birth</Label>
+                  <Input
+                    id="tenantDob"
+                    type="date"
+                    value={form.tenantDob}
+                    onChange={(e) => setForm({ ...form, tenantDob: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Co-Tenants */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    Additional Adult Tenants
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    All adults (18+) residing in the unit must be listed and will need to sign (NMSA § 47-8-20).
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addCoTenant}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Tenant
+                </Button>
+              </div>
+
+              {coTenants.length === 0 && (
+                <div className="p-4 rounded-lg border border-dashed text-center text-sm text-muted-foreground">
+                  No additional tenants. Click &quot;Add Tenant&quot; if more than one adult will reside in the unit.
+                </div>
+              )}
+
+              {coTenants.map((ct, i) => (
+                <div key={i} className="p-4 rounded-lg border space-y-3 relative">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-primary">Co-Tenant {i + 1}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeCoTenant(i)}
+                      className="text-destructive hover:text-destructive h-7 px-2"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">First Name *</Label>
+                      <Input
+                        placeholder="Jane"
+                        value={ct.firstName}
+                        onChange={(e) => updateCoTenant(i, 'firstName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Last Name *</Label>
+                      <Input
+                        placeholder="Doe"
+                        value={ct.lastName}
+                        onChange={(e) => updateCoTenant(i, 'lastName', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Email * (signing invite will be sent here)</Label>
+                    <Input
+                      type="email"
+                      placeholder="cotenant@example.com"
+                      value={ct.email}
+                      onChange={(e) => updateCoTenant(i, 'email', e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Phone</Label>
+                      <Input
+                        type="tel"
+                        placeholder="(505) 555-0101"
+                        value={ct.phone}
+                        onChange={(e) => updateCoTenant(i, 'phone', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Date of Birth</Label>
+                      <Input
+                        type="date"
+                        value={ct.dateOfBirth}
+                        onChange={(e) => updateCoTenant(i, 'dateOfBirth', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Relationship</Label>
+                      <Select value={ct.relationship} onValueChange={(val) => updateCoTenant(i, 'relationship', val)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Spouse">Spouse</SelectItem>
+                          <SelectItem value="Domestic Partner">Domestic Partner</SelectItem>
+                          <SelectItem value="Roommate">Roommate</SelectItem>
+                          <SelectItem value="Family Member">Family Member</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Minor Occupants */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Baby className="h-5 w-5 text-primary" />
+                    Minor Occupants (Under 18)
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    List all children under 18 who will reside in the unit. Minors do not sign the lease.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addMinor}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Minor
+                </Button>
+              </div>
+
+              {minorOccupants.length === 0 && (
+                <div className="p-4 rounded-lg border border-dashed text-center text-sm text-muted-foreground">
+                  No minor occupants. Click &quot;Add Minor&quot; to list children under 18.
+                </div>
+              )}
+
+              {minorOccupants.map((m, i) => (
+                <div key={i} className="p-4 rounded-lg border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-primary">Minor {i + 1}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeMinor(i)}
+                      className="text-destructive hover:text-destructive h-7 px-2"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">First Name *</Label>
+                      <Input
+                        placeholder="First name"
+                        value={m.firstName}
+                        onChange={(e) => updateMinor(i, 'firstName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Last Name *</Label>
+                      <Input
+                        placeholder="Last name"
+                        value={m.lastName}
+                        onChange={(e) => updateMinor(i, 'lastName', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Date of Birth *</Label>
+                      <Input
+                        type="date"
+                        value={m.dateOfBirth}
+                        onChange={(e) => updateMinor(i, 'dateOfBirth', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Relationship</Label>
+                      <Select value={m.relationship} onValueChange={(val) => updateMinor(i, 'relationship', val)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Child">Child</SelectItem>
+                          <SelectItem value="Stepchild">Stepchild</SelectItem>
+                          <SelectItem value="Grandchild">Grandchild</SelectItem>
+                          <SelectItem value="Foster Child">Foster Child</SelectItem>
+                          <SelectItem value="Dependent">Dependent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* Lease Term */}
@@ -513,16 +819,6 @@ export default function CreateLeasePage() {
                     onChange={(e) => setForm({ ...form, lateFee: e.target.value })}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="numOccupants">Number of Occupants</Label>
-                  <Input
-                    id="numOccupants"
-                    type="number"
-                    min="1"
-                    value={form.numOccupants}
-                    onChange={(e) => setForm({ ...form, numOccupants: e.target.value })}
-                  />
-                </div>
               </div>
             </div>
 
@@ -567,6 +863,14 @@ export default function CreateLeasePage() {
               />
             </div>
 
+            {/* Occupant Summary */}
+            <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
+              <span className="font-medium">Total Occupants: </span>
+              {1 + coTenants.length + minorOccupants.length}
+              {coTenants.length > 0 && <span> ({coTenants.length + 1} adults signing)</span>}
+              {minorOccupants.length > 0 && <span> + {minorOccupants.length} minor{minorOccupants.length > 1 ? 's' : ''}</span>}
+            </div>
+
             {/* Actions */}
             <div className="flex justify-between pt-4 border-t">
               <Button variant="outline" onClick={() => setStep(2)}>
@@ -582,7 +886,7 @@ export default function CreateLeasePage() {
                 ) : (
                   <>
                     <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Create Lease & Send Invite
+                    Create Lease & Send Invite{coTenants.length > 0 ? 's' : ''}
                   </>
                 )}
               </Button>

@@ -36,6 +36,9 @@ export async function DELETE(request: NextRequest) {
 
     if (leaseIds.length > 0) {
       // Delete related records first to avoid foreign key constraints
+      await prisma.leaseOccupant.deleteMany({
+        where: { leaseId: { in: leaseIds } },
+      });
       await prisma.signatureAuditLog.deleteMany({
         where: { leaseId: { in: leaseIds } },
       });

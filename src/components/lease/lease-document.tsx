@@ -223,6 +223,21 @@ const styles = StyleSheet.create({
   },
 });
 
+export interface CoTenantData {
+  name: string;
+  email: string;
+  signature?: string;
+  signedAt?: string;
+  signedIp?: string;
+  relationship?: string;
+}
+
+export interface MinorOccupantData {
+  name: string;
+  dateOfBirth?: string;
+  relationship?: string;
+}
+
 export interface LeaseDocumentData {
   // Landlord info
   landlordName: string;
@@ -255,14 +270,23 @@ export interface LeaseDocumentData {
   // Signatures (base64 data URIs)
   tenantSignature?: string;
   tenantSignedAt?: string;
+  tenantSignedIp?: string;
   landlordSignature?: string;
   landlordSignedAt?: string;
+  landlordSignedIp?: string;
 
   // Template content (if template-based lease)
   templateContent?: string;
 
   // Property logo (optional base64 data URI)
   logoUrl?: string;
+
+  // Co-tenants and minor occupants
+  coTenants?: CoTenantData[];
+  minorOccupants?: MinorOccupantData[];
+
+  // Document generation metadata
+  generatedAt?: string;
 }
 
 function fmt(amount: number): string {
@@ -306,7 +330,7 @@ function populateTemplateForPdf(content: string, data: LeaseDocumentData): strin
     '{{pet_deposit}}': data.petDeposit ? fmt(data.petDeposit) : 'N/A',
     '{{pet_rent}}': data.petRent ? fmt(data.petRent) : 'N/A',
     '{{today_date}}': format(new Date(), 'MM/dd/yyyy'),
-    '{{num_occupants}}': '1',
+    '{{num_occupants}}': String(1 + (data.coTenants?.length || 0) + (data.minorOccupants?.length || 0)),
   };
 
   let populated = content;
@@ -375,10 +399,56 @@ function PageFooter({ data }: { data: LeaseDocumentData }) {
   );
 }
 
-// Shared signature page
-function SignaturePage({ data }: { data: LeaseDocumentData }) {
+// Individual signature block helper
+function SignatureBlockView({
+  title,
+  name,
+  signature,
+  signedAt,
+  signedIp,
+}: {
+  title: string;
+  name: string;
+  signature?: string;
+  signedAt?: string;
+  signedIp?: string;
+}) {
   return (
-    <Page size="LETTER" style={styles.page}>
+    <View style={styles.signatureBlock}>
+      <Text style={styles.signatureBlockTitle}>{title}</Text>
+      {signature ? (
+        <View>
+          <Image src={signature} style={styles.signatureImage} />
+          <View style={{ borderBottomWidth: 1, borderBottomColor: '#000' }} />
+        </View>
+      ) : (
+        <View style={styles.signatureLine} />
+      )}
+      <Text style={styles.signatureLabel}>{name || '________________________'}</Text>
+      {signedAt ? (
+        <View>
+          <Text style={styles.signatureDate}>
+            Signed electronically on {format(new Date(signedAt), 'MMMM d, yyyy \'at\' h:mm:ss a')}
+          </Text>
+          {signedIp && (
+            <Text style={{ fontSize: 7, color: '#a0aec0' }}>
+              IP: {signedIp}
+            </Text>
+          )}
+        </View>
+      ) : (
+        <Text style={styles.signatureDate}>Date: ________________________</Text>
+      )}
+    </View>
+  );
+}
+
+// Shared signature page(s)
+function SignaturePage({ data }: { data: LeaseDocumentData }) {
+  const coTenants = data.coTenants || [];
+
+  return (
+    <Page size="LETTER" style={styles.page} wrap>
       <View style={{ marginBottom: 16 }}>
         <Text style={{ ...styles.sectionTitle, textAlign: 'center', borderBottomWidth: 0 }}>
           EXECUTION OF AGREEMENT
@@ -409,59 +479,75 @@ function SignaturePage({ data }: { data: LeaseDocumentData }) {
         </View>
       </View>
 
+      {/* Primary signatures: Landlord + Tenant */}
       <View style={styles.signatureSection}>
-        {/* Landlord signature */}
-        <View style={styles.signatureBlock}>
-          <Text style={styles.signatureBlockTitle}>Landlord</Text>
-          {data.landlordSignature ? (
-            <View>
-              <Image src={data.landlordSignature} style={styles.signatureImage} />
-              <View style={{ borderBottomWidth: 1, borderBottomColor: '#000' }} />
-            </View>
-          ) : (
-            <View style={styles.signatureLine} />
-          )}
-          <Text style={styles.signatureLabel}>{data.landlordName}</Text>
-          {data.landlordSignedAt ? (
-            <Text style={styles.signatureDate}>
-              Signed electronically on {fmtDate(data.landlordSignedAt)}
-            </Text>
-          ) : (
-            <Text style={styles.signatureDate}>Date: ________________________</Text>
-          )}
-        </View>
-
-        {/* Tenant signature */}
-        <View style={styles.signatureBlock}>
-          <Text style={styles.signatureBlockTitle}>Tenant</Text>
-          {data.tenantSignature ? (
-            <View>
-              <Image src={data.tenantSignature} style={styles.signatureImage} />
-              <View style={{ borderBottomWidth: 1, borderBottomColor: '#000' }} />
-            </View>
-          ) : (
-            <View style={styles.signatureLine} />
-          )}
-          <Text style={styles.signatureLabel}>
-            {data.tenantName || '________________________'}
-          </Text>
-          {data.tenantSignedAt ? (
-            <Text style={styles.signatureDate}>
-              Signed electronically on {fmtDate(data.tenantSignedAt)}
-            </Text>
-          ) : (
-            <Text style={styles.signatureDate}>Date: ________________________</Text>
-          )}
-        </View>
+        <SignatureBlockView
+          title="Landlord"
+          name={data.landlordName}
+          signature={data.landlordSignature}
+          signedAt={data.landlordSignedAt}
+          signedIp={data.landlordSignedIp}
+        />
+        <SignatureBlockView
+          title="Primary Tenant"
+          name={data.tenantName}
+          signature={data.tenantSignature}
+          signedAt={data.tenantSignedAt}
+          signedIp={data.tenantSignedIp}
+        />
       </View>
 
+      {/* Co-Tenant signatures */}
+      {coTenants.length > 0 && (
+        <View style={{ marginTop: 16 }}>
+          <Text style={{ ...styles.sectionTitle, fontSize: 10 }}>
+            CO-TENANT SIGNATURES
+          </Text>
+          <Text style={{ fontSize: 8, color: '#718096', marginBottom: 8 }}>
+            Per NMSA {'\u00A7'} 47-8-20, all adult tenants must sign the lease agreement.
+          </Text>
+          {/* Render co-tenant signatures in pairs */}
+          {Array.from({ length: Math.ceil(coTenants.length / 2) }).map((_, rowIndex) => (
+            <View key={rowIndex} style={{ ...styles.signatureSection, marginTop: rowIndex > 0 ? 12 : 0 }}>
+              <SignatureBlockView
+                title={`Co-Tenant${coTenants[rowIndex * 2].relationship ? ` (${coTenants[rowIndex * 2].relationship})` : ''}`}
+                name={coTenants[rowIndex * 2].name}
+                signature={coTenants[rowIndex * 2].signature}
+                signedAt={coTenants[rowIndex * 2].signedAt}
+                signedIp={coTenants[rowIndex * 2].signedIp}
+              />
+              {coTenants[rowIndex * 2 + 1] && (
+                <SignatureBlockView
+                  title={`Co-Tenant${coTenants[rowIndex * 2 + 1].relationship ? ` (${coTenants[rowIndex * 2 + 1].relationship})` : ''}`}
+                  name={coTenants[rowIndex * 2 + 1].name}
+                  signature={coTenants[rowIndex * 2 + 1].signature}
+                  signedAt={coTenants[rowIndex * 2 + 1].signedAt}
+                  signedIp={coTenants[rowIndex * 2 + 1].signedIp}
+                />
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* ESIGN/UETA Notice */}
       <View style={{ marginTop: 20, backgroundColor: LIGHT_BG, padding: 10, borderRadius: 4 }}>
         <Text style={{ fontSize: 7, color: '#718096', textAlign: 'center', lineHeight: 1.6 }}>
           Electronic signatures on this document are legally binding under the Electronic Signatures in Global
           and National Commerce Act (ESIGN Act, 15 U.S.C. {'\u00A7\u00A7'} 7001-7006) and the New Mexico Uniform Electronic
-          Transactions Act (NMSA 1978, {'\u00A7\u00A7'} 14-16-1 to 14-16-21). A complete audit trail is securely stored.
+          Transactions Act (NMSA 1978, {'\u00A7\u00A7'} 14-16-1 to 14-16-21). A complete audit trail including IP addresses
+          and timestamps is securely stored for each signatory.
         </Text>
       </View>
+
+      {/* Document generation timestamp */}
+      {data.generatedAt && (
+        <View style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 7, color: '#a0aec0', textAlign: 'center' }}>
+            Document generated on {format(new Date(data.generatedAt), 'MMMM d, yyyy \'at\' h:mm:ss a zzz')}
+          </Text>
+        </View>
+      )}
 
       <PageFooter data={data} />
     </Page>
@@ -572,6 +658,62 @@ function LegacyLeaseDocument({ data }: { data: LeaseDocumentData }) {
             )}
           </View>
         </View>
+
+        {/* Co-Tenants */}
+        {data.coTenants && data.coTenants.length > 0 && (
+          <>
+            <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 9, color: PRIMARY_COLOR, marginTop: 8, marginBottom: 4 }}>
+              ADDITIONAL ADULT TENANTS (CO-TENANTS)
+            </Text>
+            {data.coTenants.map((ct, i) => (
+              <View key={i} style={{ ...styles.infoBox, marginBottom: 4, padding: 8 }}>
+                <View style={styles.infoBoxRow}>
+                  <Text style={styles.infoBoxLabel}>Name:</Text>
+                  <Text style={styles.infoBoxValue}>{ct.name}</Text>
+                </View>
+                <View style={styles.infoBoxRow}>
+                  <Text style={styles.infoBoxLabel}>Email:</Text>
+                  <Text style={styles.infoBoxValue}>{ct.email}</Text>
+                </View>
+                {ct.relationship && (
+                  <View style={styles.infoBoxRow}>
+                    <Text style={styles.infoBoxLabel}>Relationship:</Text>
+                    <Text style={styles.infoBoxValue}>{ct.relationship}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* Minor Occupants */}
+        {data.minorOccupants && data.minorOccupants.length > 0 && (
+          <>
+            <Text style={{ fontFamily: 'Helvetica-Bold', fontSize: 9, color: PRIMARY_COLOR, marginTop: 8, marginBottom: 4 }}>
+              MINOR OCCUPANTS (UNDER 18)
+            </Text>
+            {data.minorOccupants.map((minor, i) => (
+              <View key={i} style={{ ...styles.infoBox, marginBottom: 4, padding: 8 }}>
+                <View style={styles.infoBoxRow}>
+                  <Text style={styles.infoBoxLabel}>Name:</Text>
+                  <Text style={styles.infoBoxValue}>{minor.name}</Text>
+                </View>
+                {minor.dateOfBirth && (
+                  <View style={styles.infoBoxRow}>
+                    <Text style={styles.infoBoxLabel}>Date of Birth:</Text>
+                    <Text style={styles.infoBoxValue}>{format(new Date(minor.dateOfBirth), 'MM/dd/yyyy')}</Text>
+                  </View>
+                )}
+                {minor.relationship && (
+                  <View style={styles.infoBoxRow}>
+                    <Text style={styles.infoBoxLabel}>Relationship:</Text>
+                    <Text style={styles.infoBoxValue}>{minor.relationship}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </>
+        )}
 
         <Text style={styles.sectionTitle}>2. Premises</Text>
         <Text style={styles.paragraph}>

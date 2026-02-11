@@ -61,6 +61,9 @@ export async function GET(
             content: true,
           },
         },
+        occupants: {
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -71,11 +74,14 @@ export async function GET(
       );
     }
 
-    // Verify the user is the tenant or the landlord
+    // Verify the user is the tenant, co-tenant, or the landlord
     const isTenant = session.user.id === lease.tenantId || session.user.email === lease.tenant.email;
     const isLandlord = session.user.id === lease.unit.property.owner.id;
+    const isCoTenant = lease.occupants.some(
+      (o) => o.type === 'CO_TENANT' && (o.userId === session.user.id || o.email === session.user.email)
+    );
 
-    if (!isTenant && !isLandlord) {
+    if (!isTenant && !isLandlord && !isCoTenant) {
       return NextResponse.json(
         { success: false, error: 'Not authorized to view this lease' },
         { status: 403 }
@@ -120,6 +126,26 @@ export async function GET(
         templateContent: lease.template?.content || undefined,
         tenantDob: lease.tenant.dateOfBirth?.toISOString() || undefined,
         logoUrl: property.logoUrl || undefined,
+        tenantSignedIp: lease.tenantSignedIp || undefined,
+        landlordSignedIp: lease.landlordSignedIp || undefined,
+        generatedAt: new Date().toISOString(),
+        coTenants: lease.occupants
+          .filter((o) => o.type === 'CO_TENANT')
+          .map((o) => ({
+            name: `${o.firstName} ${o.lastName}`,
+            email: o.email || '',
+            signature: o.signature || undefined,
+            signedAt: o.signedAt?.toISOString() || undefined,
+            signedIp: o.signedIp || undefined,
+            relationship: o.relationship || undefined,
+          })),
+        minorOccupants: lease.occupants
+          .filter((o) => o.type === 'MINOR')
+          .map((o) => ({
+            name: `${o.firstName} ${o.lastName}`,
+            dateOfBirth: o.dateOfBirth?.toISOString() || undefined,
+            relationship: o.relationship || undefined,
+          })),
       },
     });
   } catch (error) {
