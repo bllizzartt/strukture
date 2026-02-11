@@ -23,6 +23,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 interface Application {
@@ -69,10 +81,12 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 };
 
 export default function ApplicationsListPage() {
+  const { toast } = useToast();
   const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const fetchApplications = useCallback(async () => {
     try {
@@ -93,6 +107,29 @@ export default function ApplicationsListPage() {
   useEffect(() => {
     fetchApplications();
   }, [fetchApplications]);
+
+  const updateStatus = async (appId: string, status: string, applicantName: string) => {
+    setUpdatingId(appId);
+    try {
+      const res = await fetch(`/api/landlord/applications/${appId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        const label = status === 'APPROVED' ? 'approved' : status === 'DENIED' ? 'denied' : status.toLowerCase().replace('_', ' ');
+        toast({ title: 'Updated', description: `${applicantName}'s application has been ${label}. An email notification has been sent.` });
+        fetchApplications();
+      } else {
+        toast({ variant: 'destructive', title: 'Error', description: result.error });
+      }
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to update application' });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const filtered = applications.filter((app) => {
     if (!searchQuery) return true;
@@ -189,33 +226,40 @@ export default function ApplicationsListPage() {
         <div className="space-y-3">
           {filtered.map((app) => {
             const status = statusConfig[app.status] || statusConfig.SUBMITTED;
+            const isActionable = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
+            const isUpdating = updatingId === app.id;
             return (
-              <Link key={app.id} href={`/landlord/applications/${app.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                          <User className="h-5 w-5 text-primary" />
+              <Card key={app.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between">
+                    <Link href={`/landlord/applications/${app.id}`} className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 shrink-0">
+                        <User className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">
+                            {app.firstName} {app.lastName}
+                          </p>
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                              status.color
+                            )}
+                          >
+                            {status.icon}
+                            {status.label}
+                          </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">
-                              {app.firstName} {app.lastName}
-                            </p>
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                                status.color
-                              )}
-                            >
-                              {status.icon}
-                              {status.label}
-                            </span>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{app.email}</p>
+                        <p className="text-sm text-muted-foreground">{app.email}</p>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5 md:hidden">
+                          <Building2 className="h-3 w-3" />
+                          {app.property.name}
+                          {app.unit && ` - Unit ${app.unit.unitNumber}`}
                         </div>
                       </div>
+                    </Link>
+                    <div className="flex items-center gap-3 shrink-0">
                       <div className="text-right hidden md:block">
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Building2 className="h-3.5 w-3.5" />
@@ -227,10 +271,63 @@ export default function ApplicationsListPage() {
                           {app.documents.length} docs uploaded
                         </p>
                       </div>
+                      {isActionable && (
+                        <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="default" disabled={isUpdating} className="h-8">
+                                {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                                Accept
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Approve Application</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Approve {app.firstName} {app.lastName}&apos;s application for {app.property.name}?
+                                  They will receive an email notification.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => updateStatus(app.id, 'APPROVED', `${app.firstName} ${app.lastName}`)}>
+                                  Approve
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="destructive" disabled={isUpdating} className="h-8">
+                                <XCircle className="h-3.5 w-3.5 mr-1" />
+                                Deny
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Deny Application</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Deny {app.firstName} {app.lastName}&apos;s application for {app.property.name}?
+                                  They will receive an email notification. This cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => updateStatus(app.id, 'DENIED', `${app.firstName} ${app.lastName}`)}
+                                  className="bg-destructive text-destructive-foreground"
+                                >
+                                  Deny Application
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                  </div>
+                </CardContent>
+              </Card>
             );
           })}
         </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
+import { sendApplicationApprovedEmail, sendApplicationDeniedEmail } from '@/lib/email';
 
 // GET /api/landlord/applications/[id] - Get application details
 export async function GET(
@@ -115,6 +116,28 @@ export async function PATCH(
       );
     }
 
+    // Fetch full application data including property address for emails
+    const fullApplication = await prisma.rentalApplication.findUnique({
+      where: { id },
+      include: {
+        property: {
+          select: {
+            name: true,
+            addressLine1: true,
+            city: true,
+            state: true,
+            zipCode: true,
+            owner: {
+              select: { firstName: true, lastName: true },
+            },
+          },
+        },
+        unit: {
+          select: { unitNumber: true },
+        },
+      },
+    });
+
     const updated = await prisma.rentalApplication.update({
       where: { id },
       data: {
@@ -137,6 +160,28 @@ export async function PATCH(
         ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
       },
     });
+
+    // Send email notification to applicant on approval or denial
+    if (fullApplication && (status === 'APPROVED' || status === 'DENIED')) {
+      const propertyAddress = `${fullApplication.property.addressLine1}, ${fullApplication.property.city}, ${fullApplication.property.state} ${fullApplication.property.zipCode}`;
+      const landlordName = `${fullApplication.property.owner.firstName} ${fullApplication.property.owner.lastName}`;
+
+      const emailData = {
+        applicantName: `${fullApplication.firstName} ${fullApplication.lastName}`,
+        propertyName: fullApplication.property.name,
+        propertyAddress,
+        unitNumber: fullApplication.unit?.unitNumber,
+        landlordName,
+      };
+
+      const emailResult = status === 'APPROVED'
+        ? await sendApplicationApprovedEmail(fullApplication.email, emailData)
+        : await sendApplicationDeniedEmail(fullApplication.email, emailData);
+
+      if (!emailResult.success) {
+        console.error(`Failed to send ${status} email to ${fullApplication.email}:`, emailResult.error);
+      }
+    }
 
     return NextResponse.json({
       success: true,
