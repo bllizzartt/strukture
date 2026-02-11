@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
-import { Telegraf } from 'telegraf';
 
-function getBot(): Telegraf | null {
-  if (!process.env.TELEGRAM_BOT_TOKEN) return null;
-  return new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+const TELEGRAM_API = 'https://api.telegram.org/bot';
+
+function getToken(): string | null {
+  return process.env.TELEGRAM_BOT_TOKEN || null;
 }
 
 // GET - Get current Telegram connection status + bot info
@@ -26,15 +26,20 @@ export async function GET() {
       },
     });
 
-    // Get bot username
+    // Get bot username via direct API call
     let botUsername: string | null = null;
-    const bot = getBot();
-    if (bot) {
+    const token = getToken();
+    const tokenConfigured = !!token;
+
+    if (token) {
       try {
-        const me = await bot.telegram.getMe();
-        botUsername = me.username || null;
+        const res = await fetch(`${TELEGRAM_API}${token}/getMe`);
+        const data = await res.json();
+        if (data.ok && data.result?.username) {
+          botUsername = data.result.username;
+        }
       } catch {
-        // Bot token may be invalid
+        // Network error or invalid token
       }
     }
 
@@ -45,6 +50,7 @@ export async function GET() {
         telegramUsername: user?.telegramUsername || null,
         telegramNotifications: user?.telegramNotifications || false,
         botUsername,
+        tokenConfigured,
       },
     });
   } catch (error) {
@@ -66,24 +72,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Verification code required' }, { status: 400 });
     }
 
-    const bot = getBot();
-    if (!bot) {
+    const token = getToken();
+    if (!token) {
       return NextResponse.json({ success: false, error: 'Telegram bot not configured' }, { status: 503 });
     }
 
-    // Fetch recent updates to find the message with the verification code
-    const updates = await bot.telegram.getUpdates(0, 100, 0, ['message']);
+    // Fetch recent updates via direct API call
+    const updatesRes = await fetch(
+      `${TELEGRAM_API}${token}/getUpdates?offset=0&limit=100&allowed_updates=["message"]`
+    );
+    const updatesData = await updatesRes.json();
+
+    if (!updatesData.ok) {
+      return NextResponse.json({ success: false, error: 'Failed to check Telegram updates' }, { status: 502 });
+    }
 
     let matchedChatId: string | null = null;
     let matchedUsername: string | null = null;
 
-    for (const update of updates) {
-      const msg = 'message' in update ? update.message : undefined;
-      if (!msg) continue;
-      const text = 'text' in msg ? (msg as { text: string }).text : undefined;
-      if (text && text.trim() === verificationCode.trim()) {
-        matchedChatId = String(msg.chat.id);
-        matchedUsername = msg.from?.username || null;
+    for (const update of updatesData.result || []) {
+      if (
+        update.message?.text &&
+        update.message.text.trim() === verificationCode.trim()
+      ) {
+        matchedChatId = String(update.message.chat.id);
+        matchedUsername = update.message.from?.username || null;
         break;
       }
     }
@@ -122,13 +135,16 @@ export async function POST(request: NextRequest) {
 
     // Send confirmation message
     try {
-      await bot.telegram.sendMessage(
-        matchedChatId,
-        '✅ *Strukture Connected!*\n\nYou will now receive notifications for your properties\\.',
-        { parse_mode: 'MarkdownV2' }
-      );
+      await fetch(`${TELEGRAM_API}${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: matchedChatId,
+          text: 'Strukture Connected!\n\nYou will now receive notifications for your properties.',
+        }),
+      });
     } catch {
-      // Non-critical - connection is still saved
+      // Non-critical
     }
 
     return NextResponse.json({
