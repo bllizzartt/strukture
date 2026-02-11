@@ -256,21 +256,21 @@ export async function POST(request: NextRequest) {
     const emailResults = await Promise.allSettled(
       allRecipients.map(email =>
         sendLeaseInviteEmail(email, { ...emailInviteData, tenantEmail: email })
-          .then(success => ({ email, success }))
+          .then(result => ({ email, ...result }))
       )
     );
 
-    const failedEmails: string[] = [];
+    const failedEmails: { email: string; reason: string }[] = [];
     for (const result of emailResults) {
       if (result.status === 'rejected') {
-        failedEmails.push('unknown');
+        failedEmails.push({ email: 'unknown', reason: String(result.reason) });
       } else if (!result.value.success) {
-        failedEmails.push(result.value.email);
+        failedEmails.push({ email: result.value.email, reason: result.value.error || 'Unknown error' });
       }
     }
 
     if (failedEmails.length > 0) {
-      console.warn(`Failed to send lease invite emails to: ${failedEmails.join(', ')}`);
+      console.warn('Failed to send lease invite emails:', failedEmails);
     }
 
     // Create audit log
@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
       success: true,
       data: lease,
       message: failedEmails.length > 0
-        ? `Lease created but failed to send invite to: ${failedEmails.join(', ')}. You can resend from the lease details.`
+        ? `Lease created but failed to send invite to: ${failedEmails.map(f => f.email).join(', ')}. You can resend from the lease details.`
         : 'Lease created and invite sent to all tenant(s)',
       failedEmails: failedEmails.length > 0 ? failedEmails : undefined,
     });

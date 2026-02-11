@@ -262,10 +262,13 @@ export default function CreateLeasePage() {
       const result = await res.json();
       if (result.success) {
         if (result.failedEmails?.length > 0) {
+          const failedList = result.failedEmails
+            .map((f: { email: string; reason: string }) => `${f.email}: ${f.reason}`)
+            .join('; ');
           toast({
             variant: 'destructive',
             title: 'Lease Created — Email Issue',
-            description: `Lease created but failed to deliver invite to: ${result.failedEmails.join(', ')}. You can resend from the lease details. Please check the email address and try again.`,
+            description: `Email delivery failed: ${failedList}. You can resend from the leases page.`,
           });
         } else {
           toast({ title: 'Lease Created', description: result.message || 'Lease created and invite sent to tenant(s).' });

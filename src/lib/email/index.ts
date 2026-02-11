@@ -159,10 +159,11 @@ export interface LeaseInviteData {
 
 /**
  * Send lease signing invite to tenant
+ * Returns { success, error? } with the Resend error message if failed
  */
-export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): Promise<boolean> {
+export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): Promise<{ success: boolean; error?: string }> {
   const resend = getResend();
-  if (!resend) return false;
+  if (!resend) return { success: false, error: 'RESEND_API_KEY is not configured' };
 
   const signUrl = `${APP_URL}/lease/sign/${data.leaseId}`;
 
@@ -219,13 +220,14 @@ export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): P
     });
     if (error) {
       console.error(`Failed to send lease invite email to ${to}:`, error);
-      return false;
+      return { success: false, error: error.message || 'Resend API error' };
     }
     console.log(`Lease invite email sent successfully to ${to} (id: ${result?.id})`);
-    return true;
+    return { success: true };
   } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Failed to send lease invite email to ${to}:`, error);
-    return false;
+    return { success: false, error: msg };
   }
 }
 
