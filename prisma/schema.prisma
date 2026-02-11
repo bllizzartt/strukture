@@ -200,6 +200,7 @@ model User {
   auditLogs             AuditLog[]
   leaseTemplates        LeaseTemplate[]
   signatureAuditLogs    SignatureAuditLog[]
+  vendors               Vendor[]
 
   @@index([email])
   @@index([role])
@@ -979,4 +980,34 @@ model SignatureAuditLog {
   @@index([leaseId])
   @@index([userId])
   @@index([timestamp])
+}
+
+// ==================== Vendor Management ====================
+
+model Vendor {
+  id                    String                @id @default(cuid())
+  ownerId               String?
+
+  // Vendor info
+  name                  String
+  companyName           String?
+  email                 String
+  phone                 String?
+
+  // What they handle
+  categories            MaintenanceCategory[]
+
+  // Status
+  isActive              Boolean               @default(true)
+  notes                 String?               @db.Text
+
+  // Timestamps
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  // Relations
+  owner                 User?                 @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId])
+  @@index([isActive])
 }
