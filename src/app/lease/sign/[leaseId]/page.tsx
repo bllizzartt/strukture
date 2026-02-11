@@ -263,7 +263,7 @@ export default function LeaseSignPage() {
   }
 
   if (!lease) {
-    const fallbackUrl = session?.user?.role === 'LANDLORD' ? '/landlord' : session?.user?.role === 'TENANT' ? '/tenant' : '/';
+    const fallbackUrl = session?.user?.role === 'LANDLORD' ? '/landlord/dashboard' : session?.user?.role === 'TENANT' ? '/tenant/dashboard' : '/';
     return (
       <div className="min-h-screen flex flex-col">
         <header className="border-b">
@@ -316,7 +316,7 @@ export default function LeaseSignPage() {
     ? 'remaining co-tenant(s)'
     : null;
 
-  const dashboardUrl = isCurrentUserLandlord ? '/landlord' : (isCurrentUserTenant || isCurrentUserCoTenant) ? '/tenant' : '/';
+  const dashboardUrl = isCurrentUserLandlord ? '/landlord/dashboard' : (isCurrentUserTenant || isCurrentUserCoTenant) ? '/tenant/dashboard' : '/';
 
   const monthlyRent = typeof lease.monthlyRent === 'string' ? parseFloat(lease.monthlyRent) : lease.monthlyRent;
   const depositAmount = typeof lease.depositAmount === 'string' ? parseFloat(lease.depositAmount) : lease.depositAmount;
