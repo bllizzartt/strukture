@@ -261,7 +261,15 @@ export default function CreateLeasePage() {
 
       const result = await res.json();
       if (result.success) {
-        toast({ title: 'Lease Created', description: 'Lease created and invite sent to tenant(s).' });
+        if (result.failedEmails?.length > 0) {
+          toast({
+            variant: 'destructive',
+            title: 'Lease Created — Email Issue',
+            description: `Lease created but failed to deliver invite to: ${result.failedEmails.join(', ')}. You can resend from the lease details. Please check the email address and try again.`,
+          });
+        } else {
+          toast({ title: 'Lease Created', description: result.message || 'Lease created and invite sent to tenant(s).' });
+        }
         router.push('/landlord/leases');
       } else {
         toast({ variant: 'destructive', title: 'Error', description: result.error || 'Failed to create lease' });

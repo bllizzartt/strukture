@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2, Plus, PenLine } from 'lucide-react';
+import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2, Plus, PenLine, Send } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -91,6 +91,7 @@ export default function LandlordLeasesPage() {
   const [removingLeaseId, setRemovingLeaseId] = useState<string | null>(null);
   const [deletingLeaseId, setDeletingLeaseId] = useState<string | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [resendingLeaseId, setResendingLeaseId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -162,6 +163,36 @@ export default function LandlordLeasesPage() {
       });
     } finally {
       setRemovingLeaseId(null);
+    }
+  };
+
+  const handleResendInvite = async (leaseId: string) => {
+    setResendingLeaseId(leaseId);
+    try {
+      const response = await fetch(`/api/landlord/leases/${leaseId}/resend-invite`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast({
+          title: 'Invites Sent',
+          description: result.message,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to resend invites',
+        });
+      }
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to resend invites',
+      });
+    } finally {
+      setResendingLeaseId(null);
     }
   };
 
@@ -466,12 +497,27 @@ export default function LandlordLeasesPage() {
 
                     <div className="flex items-center gap-2">
                       {lease.status === 'PENDING_SIGNATURE' && (
-                        <Link href={`/lease/sign/${lease.id}`}>
-                          <Button size="sm">
-                            <PenLine className="mr-1 h-4 w-4" />
-                            Review & Sign
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleResendInvite(lease.id)}
+                            disabled={resendingLeaseId === lease.id}
+                          >
+                            {resendingLeaseId === lease.id ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="mr-1 h-4 w-4" />
+                            )}
+                            Resend Invite
                           </Button>
-                        </Link>
+                          <Link href={`/lease/sign/${lease.id}`}>
+                            <Button size="sm">
+                              <PenLine className="mr-1 h-4 w-4" />
+                              Review & Sign
+                            </Button>
+                          </Link>
+                        </>
                       )}
                       <Link href={`/landlord/tenants/${lease.tenant.id}`}>
                         <Button variant="outline" size="sm">

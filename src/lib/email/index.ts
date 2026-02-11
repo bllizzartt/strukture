@@ -211,15 +211,20 @@ export async function sendLeaseInviteEmail(to: string, data: LeaseInviteData): P
   `;
 
   try {
-    await resend.emails.send({
+    const { data: result, error } = await resend.emails.send({
       from: FROM_EMAIL,
       to,
       subject: `Lease Agreement Ready to Sign - ${data.propertyName} Unit ${data.unitNumber}`,
       html: baseTemplate(content),
     });
+    if (error) {
+      console.error(`Failed to send lease invite email to ${to}:`, error);
+      return false;
+    }
+    console.log(`Lease invite email sent successfully to ${to} (id: ${result?.id})`);
     return true;
   } catch (error) {
-    console.error('Failed to send lease invite email:', error);
+    console.error(`Failed to send lease invite email to ${to}:`, error);
     return false;
   }
 }
@@ -259,15 +264,19 @@ export async function sendTenantSignedEmail(to: string, data: TenantSignedData):
   `;
 
   try {
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: FROM_EMAIL,
       to,
       subject: `Action Required: Counter-Sign Lease - ${data.propertyName} Unit ${data.unitNumber}`,
       html: baseTemplate(content),
     });
+    if (error) {
+      console.error(`Failed to send tenant signed notification to ${to}:`, error);
+      return false;
+    }
     return true;
   } catch (error) {
-    console.error('Failed to send tenant signed notification:', error);
+    console.error(`Failed to send tenant signed notification to ${to}:`, error);
     return false;
   }
 }
@@ -340,25 +349,34 @@ export async function sendLeaseFullySignedEmail(data: LeaseFullySignedData): Pro
   `;
 
   try {
-    // Send to landlord
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: data.landlordEmail,
-      subject: `Lease Active - ${data.propertyName} Unit ${data.unitNumber}`,
-      html: baseTemplate(makeContent(data.landlordName, true)),
-    });
+    // Send to both landlord and tenant in parallel
+    const results = await Promise.allSettled([
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: data.landlordEmail,
+        subject: `Lease Active - ${data.propertyName} Unit ${data.unitNumber}`,
+        html: baseTemplate(makeContent(data.landlordName, true)),
+      }),
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: data.tenantEmail,
+        subject: `Lease Active - ${data.propertyName} Unit ${data.unitNumber}`,
+        html: baseTemplate(makeContent(data.tenantName, false)),
+      }),
+    ]);
 
-    // Send to tenant
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: data.tenantEmail,
-      subject: `Lease Active - ${data.propertyName} Unit ${data.unitNumber}`,
-      html: baseTemplate(makeContent(data.tenantName, false)),
-    });
+    for (const [i, result] of results.entries()) {
+      const recipient = i === 0 ? data.landlordEmail : data.tenantEmail;
+      if (result.status === 'rejected') {
+        console.error(`Failed to send lease active email to ${recipient}:`, result.reason);
+      } else if (result.value.error) {
+        console.error(`Failed to send lease active email to ${recipient}:`, result.value.error);
+      }
+    }
 
     return true;
   } catch (error) {
-    console.error('Failed to send lease fully signed email:', error);
+    console.error('Failed to send lease fully signed emails:', error);
     return false;
   }
 }
