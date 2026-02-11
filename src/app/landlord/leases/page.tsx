@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2, Plus } from 'lucide-react';
+import { Loader2, FileText, Calendar, DollarSign, Building2, Users, Trash2, Plus, PenLine } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -465,6 +465,14 @@ export default function LandlordLeasesPage() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {lease.status === 'PENDING_SIGNATURE' && (
+                        <Link href={`/lease/sign/${lease.id}`}>
+                          <Button size="sm">
+                            <PenLine className="mr-1 h-4 w-4" />
+                            Review & Sign
+                          </Button>
+                        </Link>
+                      )}
                       <Link href={`/landlord/tenants/${lease.tenant.id}`}>
                         <Button variant="outline" size="sm">
                           View Details
