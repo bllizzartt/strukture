@@ -1,11 +1,20 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, FileText, Calendar, DollarSign, Home, Clock, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { Loader2, FileText, Calendar, DollarSign, Home, Clock, AlertCircle, PenLine, Shield, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
+import type { LeaseDocumentData } from '@/components/lease/lease-document';
+
+const PdfDownloadButton = dynamic(
+  () => import('@/components/lease/pdf-download-button').then((mod) => ({ default: mod.PdfDownloadButton })),
+  { ssr: false }
+);
 
 interface Lease {
   id: string;
@@ -26,6 +35,7 @@ interface Lease {
   moveInDate: string | null;
   moveOutDate: string | null;
   autoRenewal: boolean;
+  templateId: string | null;
   unit: {
     unitNumber: string;
     bedrooms: number;
@@ -38,8 +48,18 @@ interface Lease {
       city: string;
       state: string;
       zipCode: string;
+      owner?: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string | null;
+      };
     };
   };
+  template?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 const leaseStatusLabels: Record<string, string> = {
@@ -64,6 +84,7 @@ export default function TenantLeasePage() {
   const { toast } = useToast();
   const [lease, setLease] = useState<Lease | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [pdfData, setPdfData] = useState<LeaseDocumentData | null>(null);
 
   const fetchLease = useCallback(async () => {
     try {
@@ -72,7 +93,7 @@ export default function TenantLeasePage() {
       if (result.success && result.data) {
         setLease(result.data);
       }
-    } catch (error) {
+    } catch {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -86,6 +107,19 @@ export default function TenantLeasePage() {
   useEffect(() => {
     fetchLease();
   }, [fetchLease]);
+
+  const fetchPdfData = async () => {
+    if (!lease) return;
+    try {
+      const response = await fetch(`/api/lease/${lease.id}/pdf`);
+      const result = await response.json();
+      if (result.success) {
+        setPdfData(result.data);
+      }
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to load PDF data' });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -119,14 +153,58 @@ export default function TenantLeasePage() {
   const isExpiringSoon = daysRemaining <= 60 && daysRemaining > 0;
   const monthlyRent = typeof lease.monthlyRent === 'string' ? parseFloat(lease.monthlyRent) : lease.monthlyRent;
   const depositAmount = typeof lease.depositAmount === 'string' ? parseFloat(lease.depositAmount) : lease.depositAmount;
+  const isFullySigned = !!lease.tenantSignedAt && !!lease.landlordSignedAt;
+  const needsTenantSignature = !lease.tenantSignedAt && lease.status === 'PENDING_SIGNATURE';
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Lease</h1>
-        <p className="text-muted-foreground">View your lease details</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Lease</h1>
+          <p className="text-muted-foreground">View your lease details</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {needsTenantSignature && (
+            <Link href={`/lease/sign/${lease.id}`}>
+              <Button>
+                <PenLine className="mr-2 h-4 w-4" />
+                Review & Sign
+              </Button>
+            </Link>
+          )}
+          {isFullySigned && (
+            <Link href={`/lease/sign/${lease.id}`}>
+              <Button variant="outline" size="sm">
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View Full Lease
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
+
+      {/* Pending Signature Alert */}
+      {needsTenantSignature && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <PenLine className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-amber-800">Your signature is required</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Please review and sign the lease agreement to activate your tenancy.
+                </p>
+                <Link href={`/lease/sign/${lease.id}`}>
+                  <Button className="mt-3" size="sm">
+                    Review & Sign Lease
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -170,6 +248,52 @@ export default function TenantLeasePage() {
         </Card>
       </div>
 
+      {/* Signed Lease Document Section */}
+      {isFullySigned && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Signed Lease Document
+            </CardTitle>
+            <CardDescription>
+              Your lease has been signed by both parties and is legally binding.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+              <div>
+                <p className="font-medium text-green-800">Lease Agreement - Fully Executed</p>
+                <div className="flex gap-4 mt-1 text-sm text-green-700">
+                  {lease.tenantSignedAt && (
+                    <span>Tenant signed: {format(new Date(lease.tenantSignedAt), 'MMM d, yyyy')}</span>
+                  )}
+                  {lease.landlordSignedAt && (
+                    <span>Landlord signed: {format(new Date(lease.landlordSignedAt), 'MMM d, yyyy')}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {pdfData ? (
+                  <PdfDownloadButton
+                    data={pdfData}
+                    fileName={`lease-${lease.unit.property.name}-unit-${lease.unit.unitNumber}.pdf`}
+                  />
+                ) : (
+                  <Button onClick={fetchPdfData} variant="outline" size="sm">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Download PDF
+                  </Button>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              This lease was signed electronically in compliance with the ESIGN Act and the New Mexico UETA. A complete audit trail has been securely stored.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Property Info */}
       <Card>
         <CardHeader>
@@ -209,6 +333,16 @@ export default function TenantLeasePage() {
               )}
             </div>
           </div>
+          {lease.unit.property.owner && (
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-sm text-muted-foreground mb-2">Property Manager</p>
+              <p className="font-medium">{lease.unit.property.owner.firstName} {lease.unit.property.owner.lastName}</p>
+              <p className="text-sm text-muted-foreground">{lease.unit.property.owner.email}</p>
+              {lease.unit.property.owner.phone && (
+                <p className="text-sm text-muted-foreground">{lease.unit.property.owner.phone}</p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -18,8 +18,9 @@ export async function GET() {
     const lease = await prisma.lease.findFirst({
       where: {
         tenantId: session.user.id,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'PENDING_SIGNATURE'] },
       },
+      orderBy: { createdAt: 'desc' },
       include: {
         unit: {
           include: {
@@ -31,8 +32,22 @@ export async function GET() {
                 city: true,
                 state: true,
                 zipCode: true,
+                owner: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
               },
             },
+          },
+        },
+        template: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },

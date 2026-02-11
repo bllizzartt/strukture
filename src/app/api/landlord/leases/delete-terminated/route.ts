@@ -23,14 +23,30 @@ export async function DELETE(request: NextRequest) {
 
     const propertyIds = properties.map((p) => p.id);
 
-    // Delete all terminated leases for this landlord's properties
-    const result = await prisma.lease.deleteMany({
+    // Find all terminated lease IDs first
+    const terminatedLeases = await prisma.lease.findMany({
       where: {
         status: 'TERMINATED',
-        unit: {
-          propertyId: { in: propertyIds },
-        },
+        unit: { propertyId: { in: propertyIds } },
       },
+      select: { id: true },
+    });
+
+    const leaseIds = terminatedLeases.map((l) => l.id);
+
+    if (leaseIds.length > 0) {
+      // Delete related records first to avoid foreign key constraints
+      await prisma.signatureAuditLog.deleteMany({
+        where: { leaseId: { in: leaseIds } },
+      });
+      await prisma.auditLog.deleteMany({
+        where: { entityType: 'Lease', entityId: { in: leaseIds } },
+      });
+    }
+
+    // Now delete the leases
+    const result = await prisma.lease.deleteMany({
+      where: { id: { in: leaseIds } },
     });
 
     return NextResponse.json({

@@ -44,12 +44,29 @@ export async function DELETE(
       );
     }
 
-    if (lease.status === 'ACTIVE' || lease.status === 'PENDING_SIGNATURE') {
+    if (lease.status === 'ACTIVE') {
       return NextResponse.json(
-        { success: false, error: 'Cannot delete an active or pending lease. Terminate it first.' },
+        { success: false, error: 'Cannot delete an active lease. Terminate it first.' },
         { status: 400 }
       );
     }
+
+    // If canceling a pending lease, set the unit back to vacant
+    if (lease.status === 'PENDING_SIGNATURE') {
+      await prisma.unit.update({
+        where: { id: lease.unitId },
+        data: { status: 'VACANT' },
+      });
+    }
+
+    // Delete related records first to avoid foreign key constraints
+    await prisma.signatureAuditLog.deleteMany({
+      where: { leaseId },
+    });
+
+    await prisma.auditLog.deleteMany({
+      where: { entityType: 'Lease', entityId: leaseId },
+    });
 
     await prisma.lease.delete({
       where: { id: leaseId },
