@@ -124,7 +124,7 @@ export async function POST(
       );
     }
 
-    // Check for duplicate application
+    // Check for existing application from the same email
     const existingApp = await prisma.rentalApplication.findFirst({
       where: {
         propertyId,
@@ -134,8 +134,18 @@ export async function POST(
     });
 
     if (existingApp) {
+      // If they have a PENDING_PAYMENT application (never completed payment), reuse it
+      if (existingApp.status === 'PENDING_PAYMENT') {
+        return NextResponse.json({
+          success: true,
+          message: 'Resuming existing application — proceed to payment',
+          data: { id: existingApp.id },
+        });
+      }
+
+      // Block only if they already submitted a completed application
       return NextResponse.json(
-        { success: false, error: 'You already have a pending application for this property' },
+        { success: false, error: 'You already have a submitted application for this property' },
         { status: 409 }
       );
     }

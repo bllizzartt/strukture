@@ -22,6 +22,7 @@ import {
   Landmark,
   Copy,
   DollarSign,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +41,16 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import { getStripe } from '@/lib/stripe/client';
 
 const SCREENING_FEE = 45;
+const ACCEPTED_DOC_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+];
+const ACCEPTED_DOC_EXTENSIONS = '.pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif';
 const MAX_IMAGE_DIMENSION = 1600; // max width/height for uploaded images
 const IMAGE_QUALITY = 0.8; // JPEG compression quality
 
@@ -180,8 +191,8 @@ export default function ApplyPage() {
     jobTitle: '',
     monthlyIncome: '',
     employmentLength: '',
-    additionalIncome: '',
-    additionalIncomeSource: '',
+    additionalIncome: '', // Kept for serialization - sum of all additional incomes
+    additionalIncomeSource: '', // Kept for serialization - concatenated sources
     // Occupants
     numberOfOccupants: '1',
     occupantNames: '',
@@ -227,11 +238,14 @@ export default function ApplyPage() {
   // Supporting documents (unlimited)
   const [supportingDocs, setSupportingDocs] = useState<{ file: File; label: string }[]>([]);
 
+  // Additional income sources (dynamic)
+  const [additionalIncomes, setAdditionalIncomes] = useState<{ amount: string; source: string }[]>([]);
+
   const addSupportingDocs = (newFiles: FileList | null) => {
     if (!newFiles) return;
     const additions = Array.from(newFiles)
-      .filter((f) => f.type === 'application/pdf')
-      .map((file) => ({ file, label: file.name.replace(/\.pdf$/i, '') }));
+      .filter((f) => ACCEPTED_DOC_TYPES.includes(f.type) || f.name.match(/\.(pdf|jpe?g|png|gif|webp|heic|heif)$/i))
+      .map((file) => ({ file, label: file.name.replace(/\.[^/.]+$/, '') }));
     setSupportingDocs((prev) => [...prev, ...additions]);
   };
 
@@ -386,8 +400,23 @@ export default function ApplyPage() {
     try {
       const formData = new FormData();
 
+      // Serialize additional incomes into form fields before building FormData
+      const totalAdditionalIncome = additionalIncomes.reduce(
+        (sum, inc) => sum + (parseFloat(inc.amount) || 0), 0
+      );
+      const additionalIncomeSource = additionalIncomes
+        .filter(inc => inc.source && inc.amount)
+        .map(inc => `${inc.source}: $${parseFloat(inc.amount).toLocaleString()}/mo`)
+        .join('; ');
+
+      const formToSubmit = {
+        ...form,
+        additionalIncome: totalAdditionalIncome > 0 ? String(totalAdditionalIncome) : '',
+        additionalIncomeSource: additionalIncomeSource || '',
+      };
+
       // Add all form fields
-      Object.entries(form).forEach(([key, value]) => {
+      Object.entries(formToSubmit).forEach(([key, value]) => {
         if (value !== '' && value !== null && value !== undefined) {
           formData.append(key, String(value));
         }
@@ -1232,29 +1261,78 @@ export default function ApplyPage() {
                 </div>
 
                 <div className="border-t pt-4 mt-4">
-                  <h3 className="font-medium mb-3">Additional Income (Optional)</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="additionalIncome">Monthly Amount</Label>
-                      <Input
-                        id="additionalIncome"
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={form.additionalIncome}
-                        onChange={(e) => updateForm('additionalIncome', e.target.value)}
-                      />
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="font-medium">Additional Income Sources (Optional)</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Disability, freelance, child support, side jobs, etc.
+                      </p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="additionalIncomeSource">Source</Label>
-                      <Input
-                        id="additionalIncomeSource"
-                        placeholder="e.g., Freelance, Child Support"
-                        value={form.additionalIncomeSource}
-                        onChange={(e) => updateForm('additionalIncomeSource', e.target.value)}
-                      />
-                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAdditionalIncomes(prev => [...prev, { amount: '', source: '' }])}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Income
+                    </Button>
                   </div>
+
+                  {additionalIncomes.length === 0 && (
+                    <p className="text-sm text-muted-foreground italic py-2">
+                      No additional income sources added. Click &quot;Add Income&quot; if you have other income to report.
+                    </p>
+                  )}
+
+                  <div className="space-y-3">
+                    {additionalIncomes.map((income, index) => (
+                      <div key={index} className="flex items-end gap-3 rounded-lg border p-3">
+                        <div className="flex-1 space-y-1">
+                          <Label className="text-xs">Source</Label>
+                          <Input
+                            placeholder="e.g., Disability, Freelance, Child Support"
+                            value={income.source}
+                            onChange={(e) => {
+                              const updated = [...additionalIncomes];
+                              updated[index] = { ...updated[index], source: e.target.value };
+                              setAdditionalIncomes(updated);
+                            }}
+                          />
+                        </div>
+                        <div className="w-36 space-y-1">
+                          <Label className="text-xs">Monthly Amount</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={income.amount}
+                            onChange={(e) => {
+                              const updated = [...additionalIncomes];
+                              updated[index] = { ...updated[index], amount: e.target.value };
+                              setAdditionalIncomes(updated);
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAdditionalIncomes(prev => prev.filter((_, i) => i !== index))}
+                          className="text-muted-foreground hover:text-destructive pb-2"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {additionalIncomes.length > 0 && (
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      Total additional income:{' '}
+                      <span className="font-medium text-foreground">
+                        ${additionalIncomes.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0).toLocaleString()}/mo
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </>
@@ -1513,9 +1591,9 @@ export default function ApplyPage() {
                 <div className="border-t pt-4">
                   <h3 className="font-medium mb-1">Supporting Documents</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Upload any additional supporting documents (PDF only, no limit). Examples: Section 8
+                    Upload any additional supporting documents (PDF, JPG, PNG accepted). Examples: Section 8
                     voucher, veteran disability letter, state disability documentation, unemployment
-                    verification, SSI/SSDI award letter, or any other relevant documents.
+                    verification, SSI/SSDI award letter, additional income proof, or any other relevant documents.
                   </p>
 
                   {supportingDocs.length > 0 && (
@@ -1555,7 +1633,7 @@ export default function ApplyPage() {
                     <input
                       type="file"
                       className="hidden"
-                      accept=".pdf"
+                      accept={ACCEPTED_DOC_EXTENSIONS}
                       multiple
                       onChange={(e) => {
                         addSupportingDocs(e.target.files);
@@ -1602,6 +1680,15 @@ export default function ApplyPage() {
                     <p>
                       <strong>Monthly Income:</strong> ${parseFloat(form.monthlyIncome).toLocaleString()}
                     </p>
+                  )}
+                  {additionalIncomes.filter(inc => inc.amount && inc.source).length > 0 && (
+                    <>
+                      {additionalIncomes.filter(inc => inc.amount && inc.source).map((inc, i) => (
+                        <p key={i}>
+                          <strong>Additional Income:</strong> {inc.source} — ${parseFloat(inc.amount).toLocaleString()}/mo
+                        </p>
+                      ))}
+                    </>
                   )}
                   <p>
                     <strong>Occupants:</strong> {form.numberOfOccupants}
