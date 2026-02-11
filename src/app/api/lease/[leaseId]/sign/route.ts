@@ -37,6 +37,7 @@ export async function POST(
       where: { id: leaseId },
       include: {
         tenant: { select: { id: true, email: true, firstName: true, lastName: true } },
+        occupants: true,
         unit: {
           include: {
             property: {
@@ -71,22 +72,34 @@ export async function POST(
     const userAgent = request.headers.get('user-agent') || 'unknown';
     const now = new Date();
 
-    // Determine if this is tenant or landlord signing (match by ID or email)
+    // Determine if this is tenant, co-tenant, or landlord signing
     const matchesTenant = session.user.id === lease.tenantId || session.user.email === lease.tenant.email;
     const matchesLandlord = session.user.id === lease.unit.property.ownerId;
+    const matchingCoTenant = lease.occupants.find(
+      (o) => o.type === 'CO_TENANT' && (o.userId === session.user.id || o.email === session.user.email)
+    );
 
-    // Determine signing role - prioritize based on what still needs signing
-    let signingAs: 'tenant' | 'landlord' | null = null;
+    let signingAs: 'tenant' | 'landlord' | 'co_tenant' | null = null;
+    let coTenantOccupantId: string | null = null;
+
     if (matchesTenant && !lease.tenantSignedAt) {
       signingAs = 'tenant';
     } else if (matchesLandlord && !lease.landlordSignedAt) {
       signingAs = 'landlord';
+    } else if (matchingCoTenant && !matchingCoTenant.signedAt) {
+      signingAs = 'co_tenant';
+      coTenantOccupantId = matchingCoTenant.id;
     } else if (matchesTenant && lease.tenantSignedAt) {
       return NextResponse.json(
         { success: false, error: 'You have already signed this lease' },
         { status: 400 }
       );
     } else if (matchesLandlord && lease.landlordSignedAt) {
+      return NextResponse.json(
+        { success: false, error: 'You have already signed this lease' },
+        { status: 400 }
+      );
+    } else if (matchingCoTenant && matchingCoTenant.signedAt) {
       return NextResponse.json(
         { success: false, error: 'You have already signed this lease' },
         { status: 400 }
@@ -115,7 +128,18 @@ export async function POST(
 
     const signerName = session.user.name || `${session.user.email}`;
     const signerEmail = session.user.email || '';
-    const signerRole = signingAs === 'tenant' ? 'TENANT' : 'LANDLORD';
+    const signerRole = signingAs === 'landlord' ? 'LANDLORD' : 'TENANT';
+
+    // Helper: check if ALL parties have signed (landlord + primary tenant + all co-tenants)
+    const coTenants = lease.occupants.filter((o) => o.type === 'CO_TENANT');
+    const checkAllSigned = (updatedField: 'tenant' | 'landlord' | 'co_tenant') => {
+      const landlordSigned = updatedField === 'landlord' ? true : !!lease.landlordSignedAt;
+      const tenantSigned = updatedField === 'tenant' ? true : !!lease.tenantSignedAt;
+      const allCoTenantsSigned = coTenants.every((ct) =>
+        ct.id === coTenantOccupantId ? true : !!ct.signedAt
+      );
+      return landlordSigned && tenantSigned && allCoTenantsSigned;
+    };
 
     const defaultConsentText = `I, ${signerName}, hereby consent to sign this Residential Lease Agreement electronically. I acknowledge that my electronic signature is legally binding under the Electronic Signatures in Global and National Commerce Act (ESIGN Act, 15 U.S.C. §§ 7001-7006) and the New Mexico Uniform Electronic Transactions Act (NMSA 1978, §§ 14-16-1 to 14-16-21). I have read and agree to all terms and conditions of this lease agreement.`;
 
@@ -154,11 +178,8 @@ export async function POST(
     });
 
     if (signingAs === 'tenant') {
-      // If tenant matched by email but has a different user ID, update the lease
       const needsTenantIdUpdate = session.user.id !== lease.tenantId;
-
-      // Tenant signs - check if landlord already signed to activate
-      const shouldActivate = !!lease.landlordSignedAt;
+      const shouldActivate = checkAllSigned('tenant');
 
       await prisma.lease.update({
         where: { id: leaseId },
@@ -171,39 +192,13 @@ export async function POST(
         },
       });
 
-      // If both signed, activate the lease and update unit
-      if (shouldActivate) {
-        await prisma.unit.update({
-          where: { id: lease.unitId },
-          data: { status: 'OCCUPIED' },
-        });
-
-        // Send fully signed email to both parties
-        const propertyAddress = `${lease.unit.property.addressLine1}, ${lease.unit.property.city}, ${lease.unit.property.state} ${lease.unit.property.zipCode}`;
-        const landlordFullName = `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`;
-        const tenantFullName = signerName;
-
-        await sendLeaseFullySignedEmail({
-          landlordName: landlordFullName,
-          landlordEmail: lease.unit.property.owner.email,
-          tenantName: tenantFullName,
-          tenantEmail: lease.tenant.email,
-          propertyName: lease.unit.property.name,
-          unitNumber: lease.unit.unitNumber,
-          propertyAddress,
-          startDate: lease.startDate.toISOString(),
-          endDate: lease.endDate.toISOString(),
-          leaseId,
-        });
-      }
-
       // Update tenant status to ACTIVE if pending
       await prisma.user.updateMany({
         where: { id: session.user.id, status: 'PENDING' },
         data: { status: 'ACTIVE' },
       });
 
-      // Notify landlord that tenant has signed
+      // Notify landlord that tenant has signed (if not yet fully signed)
       if (!shouldActivate) {
         const tenantName = session.user.name || `${lease.tenant.firstName} ${lease.tenant.lastName}`;
         await sendTenantSignedEmail(lease.unit.property.owner.email, {
@@ -214,9 +209,39 @@ export async function POST(
           leaseId,
         });
       }
+
+      if (shouldActivate) {
+        await activateLease(lease, leaseId, signerName);
+      }
+    } else if (signingAs === 'co_tenant' && coTenantOccupantId) {
+      // Co-tenant signs - update their occupant record
+      await prisma.leaseOccupant.update({
+        where: { id: coTenantOccupantId },
+        data: {
+          signature,
+          signedAt: now,
+          signedIp: ip,
+          userId: session.user.id,
+        },
+      });
+
+      const shouldActivate = checkAllSigned('co_tenant');
+      if (shouldActivate) {
+        await prisma.lease.update({
+          where: { id: leaseId },
+          data: { status: 'ACTIVE' },
+        });
+        await activateLease(lease, leaseId, signerName);
+      }
+
+      // Update co-tenant user status to ACTIVE if pending
+      await prisma.user.updateMany({
+        where: { id: session.user.id, status: 'PENDING' },
+        data: { status: 'ACTIVE' },
+      });
     } else {
-      // Landlord signs - check if tenant already signed to activate
-      const shouldActivate = !!lease.tenantSignedAt;
+      // Landlord signs
+      const shouldActivate = checkAllSigned('landlord');
 
       await prisma.lease.update({
         where: { id: leaseId },
@@ -228,40 +253,43 @@ export async function POST(
         },
       });
 
-      // If both signed, activate the lease and update unit
       if (shouldActivate) {
-        await prisma.unit.update({
-          where: { id: lease.unitId },
-          data: { status: 'OCCUPIED' },
-        });
-
-        // Send fully signed email to both parties
-        const propertyAddress = `${lease.unit.property.addressLine1}, ${lease.unit.property.city}, ${lease.unit.property.state} ${lease.unit.property.zipCode}`;
-        const landlordFullName = signerName;
-        const tenantFullName = `${lease.tenant.firstName} ${lease.tenant.lastName}`;
-
-        await sendLeaseFullySignedEmail({
-          landlordName: landlordFullName,
-          landlordEmail: lease.unit.property.owner.email,
-          tenantName: tenantFullName,
-          tenantEmail: lease.tenant.email,
-          propertyName: lease.unit.property.name,
-          unitNumber: lease.unit.unitNumber,
-          propertyAddress,
-          startDate: lease.startDate.toISOString(),
-          endDate: lease.endDate.toISOString(),
-          leaseId,
-        });
+        await activateLease(lease, leaseId, signerName);
       }
     }
 
-    const isTenant = signingAs === 'tenant';
+    // Helper function to activate lease
+    async function activateLease(leaseData: NonNullable<typeof lease>, id: string, currentSignerName: string) {
+      await prisma.unit.update({
+        where: { id: leaseData.unitId },
+        data: { status: 'OCCUPIED' },
+      });
+
+      const propertyAddress = `${leaseData.unit.property.addressLine1}, ${leaseData.unit.property.city}, ${leaseData.unit.property.state} ${leaseData.unit.property.zipCode}`;
+      const landlordFullName = `${leaseData.unit.property.owner.firstName} ${leaseData.unit.property.owner.lastName}`;
+      const tenantFullName = `${leaseData.tenant.firstName} ${leaseData.tenant.lastName}`;
+
+      await sendLeaseFullySignedEmail({
+        landlordName: landlordFullName,
+        landlordEmail: leaseData.unit.property.owner.email,
+        tenantName: tenantFullName,
+        tenantEmail: leaseData.tenant.email,
+        propertyName: leaseData.unit.property.name,
+        unitNumber: leaseData.unit.unitNumber,
+        propertyAddress,
+        startDate: leaseData.startDate.toISOString(),
+        endDate: leaseData.endDate.toISOString(),
+        leaseId: id,
+      });
+    }
+
+    const actionMap = { tenant: 'TENANT_SIGN_LEASE', co_tenant: 'CO_TENANT_SIGN_LEASE', landlord: 'LANDLORD_SIGN_LEASE' };
 
     // Create audit log
     await prisma.auditLog.create({
       data: {
         userId: session.user.id,
-        action: isTenant ? 'TENANT_SIGN_LEASE' : 'LANDLORD_SIGN_LEASE',
+        action: actionMap[signingAs],
         entityType: 'Lease',
         entityId: leaseId,
         ipAddress: ip,
@@ -269,9 +297,17 @@ export async function POST(
       },
     });
 
+    // Check final activation state
+    const updatedLease = await prisma.lease.findUnique({
+      where: { id: leaseId },
+      select: { status: true },
+    });
+
     return NextResponse.json({
       success: true,
-      message: `Lease signed successfully${isTenant && !lease.landlordSignedAt ? '. Waiting for landlord signature.' : !isTenant && !lease.tenantSignedAt ? '. Waiting for tenant signature.' : '. Lease is now active!'}`,
+      message: updatedLease?.status === 'ACTIVE'
+        ? 'Lease signed successfully. All parties have signed — lease is now active!'
+        : 'Lease signed successfully. Waiting for remaining signatures.',
     });
   } catch (error) {
     console.error('Error signing lease:', error);

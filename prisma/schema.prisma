@@ -367,12 +367,47 @@ model Lease {
   payments              Payment[]
   documents             Document[]
   signatureAuditLogs    SignatureAuditLog[]
+  occupants             LeaseOccupant[]
 
   @@index([tenantId])
   @@index([unitId])
   @@index([status])
   @@index([endDate])
   @@index([templateId])
+}
+
+// ==================== Lease Occupants (Co-tenants & Minor Occupants) ====================
+
+model LeaseOccupant {
+  id                    String       @id @default(cuid())
+  leaseId               String
+
+  // Occupant type: CO_TENANT (adult, must sign) or MINOR (child, listed only)
+  type                  String       // CO_TENANT or MINOR
+
+  // Identity
+  firstName             String
+  lastName              String
+  email                 String?      // Required for CO_TENANT, optional for MINOR
+  phone                 String?
+  dateOfBirth           DateTime?
+  relationship          String?      // e.g. "Spouse", "Domestic Partner", "Child", "Dependent"
+
+  // Signing (CO_TENANT only)
+  userId                String?      // Links to User account once created
+  signature             String?      @db.Text
+  signedAt              DateTime?
+  signedIp              String?
+
+  // Timestamps
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  // Relations
+  lease                 Lease        @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  @@index([leaseId])
+  @@index([userId])
 }
 
 model StoredPaymentMethod {

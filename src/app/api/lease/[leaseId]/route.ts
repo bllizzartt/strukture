@@ -52,6 +52,9 @@ export async function GET(
             content: true,
           },
         },
+        occupants: {
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
