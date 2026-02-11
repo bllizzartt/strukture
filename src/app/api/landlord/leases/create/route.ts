@@ -235,9 +235,8 @@ export async function POST(request: NextRequest) {
     const landlordName = landlord ? `${landlord.firstName} ${landlord.lastName}` : 'Your Landlord';
     const propertyAddress = `${unit.property.addressLine1}, ${unit.property.city}, ${unit.property.state} ${unit.property.zipCode}`;
 
-    // Send invite email to primary tenant
-    await sendLeaseInviteEmail(data.tenantEmail.toLowerCase(), {
-      tenantEmail: data.tenantEmail.toLowerCase(),
+    // Send invite emails to all tenants in parallel
+    const emailInviteData = {
       landlordName,
       propertyName: unit.property.name,
       unitNumber: unit.unitNumber,
@@ -247,22 +246,31 @@ export async function POST(request: NextRequest) {
       startDate: data.startDate,
       endDate: data.endDate,
       leaseId: lease.id,
-    });
+    };
 
-    // Send invite emails to co-tenants
-    for (const coTenant of data.coTenants) {
-      await sendLeaseInviteEmail(coTenant.email.toLowerCase(), {
-        tenantEmail: coTenant.email.toLowerCase(),
-        landlordName,
-        propertyName: unit.property.name,
-        unitNumber: unit.unitNumber,
-        propertyAddress,
-        monthlyRent: data.monthlyRent,
-        depositAmount: data.depositAmount,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        leaseId: lease.id,
-      });
+    const allRecipients = [
+      data.tenantEmail.toLowerCase(),
+      ...data.coTenants.map(ct => ct.email.toLowerCase()),
+    ];
+
+    const emailResults = await Promise.allSettled(
+      allRecipients.map(email =>
+        sendLeaseInviteEmail(email, { ...emailInviteData, tenantEmail: email })
+          .then(success => ({ email, success }))
+      )
+    );
+
+    const failedEmails: string[] = [];
+    for (const result of emailResults) {
+      if (result.status === 'rejected') {
+        failedEmails.push('unknown');
+      } else if (!result.value.success) {
+        failedEmails.push(result.value.email);
+      }
+    }
+
+    if (failedEmails.length > 0) {
+      console.warn(`Failed to send lease invite emails to: ${failedEmails.join(', ')}`);
     }
 
     // Create audit log
@@ -287,7 +295,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: lease,
-      message: 'Lease created and invite sent to tenant(s)',
+      message: failedEmails.length > 0
+        ? `Lease created but failed to send invite to: ${failedEmails.join(', ')}. You can resend from the lease details.`
+        : 'Lease created and invite sent to all tenant(s)',
+      failedEmails: failedEmails.length > 0 ? failedEmails : undefined,
     });
   } catch (error) {
     console.error('Error creating lease:', error);
