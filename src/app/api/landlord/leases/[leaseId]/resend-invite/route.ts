@@ -142,26 +142,27 @@ export async function POST(
     const results = await Promise.allSettled(
       recipients.map(email =>
         sendLeaseInviteEmail(email, { ...emailData, tenantEmail: email })
-          .then(success => ({ email, success }))
+          .then(result => ({ email, ...result }))
       )
     );
 
     const sent: string[] = [];
-    const failed: string[] = [];
+    const failed: { email: string; reason: string }[] = [];
 
     for (const result of results) {
       if (result.status === 'fulfilled' && result.value.success) {
         sent.push(result.value.email);
+      } else if (result.status === 'fulfilled') {
+        failed.push({ email: result.value.email, reason: result.value.error || 'Unknown error' });
       } else {
-        const email = result.status === 'fulfilled' ? result.value.email : 'unknown';
-        failed.push(email);
+        failed.push({ email: 'unknown', reason: String(result.reason) });
       }
     }
 
     return NextResponse.json({
       success: true,
       message: failed.length > 0
-        ? `Sent to ${sent.length} recipient(s). Failed: ${failed.join(', ')}`
+        ? `Sent to ${sent.length} recipient(s). Failed: ${failed.map(f => `${f.email} (${f.reason})`).join(', ')}`
         : `Invite resent to ${sent.length} recipient(s)`,
       sent,
       failed,
