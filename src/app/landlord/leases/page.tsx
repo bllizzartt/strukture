@@ -258,12 +258,20 @@ export default function LandlordLeasesPage() {
           <h1 className="text-3xl font-bold">Leases</h1>
           <p className="text-muted-foreground">Manage all your lease agreements</p>
         </div>
-        <Link href="/landlord/leases/create">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Lease
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/landlord/leases/templates">
+            <Button variant="outline">
+              <FileText className="mr-2 h-4 w-4" />
+              Templates
+            </Button>
+          </Link>
+          <Link href="/landlord/leases/create">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Lease
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Summary Cards */}

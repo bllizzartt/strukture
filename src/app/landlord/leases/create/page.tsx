@@ -4,14 +4,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Upload,
   FileText,
   ArrowLeft,
   ArrowRight,
   Loader2,
   CheckCircle2,
   AlertCircle,
-  X,
+  Plus,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,22 +42,26 @@ interface Unit {
   status: string;
   monthlyRent: string | number | null;
   depositAmount: string | number | null;
+  bedrooms?: number;
+  bathrooms?: number;
 }
 
-type Step = 1 | 2 | 3 | 4;
+interface LeaseTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+}
 
 export default function CreateLeasePage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [step, setStep] = useState<Step>(1);
-  const [method, setMethod] = useState<'upload' | 'manual' | null>(null);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // PDF upload state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadedDocId, setUploadedDocId] = useState<string | null>(null);
-  const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  // Template selection
+  const [templates, setTemplates] = useState<LeaseTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
 
   // Property/unit selection
   const [properties, setProperties] = useState<Property[]>([]);
@@ -78,10 +81,25 @@ export default function CreateLeasePage() {
     rentDueDay: '1',
     petDeposit: '',
     petRent: '',
+    numOccupants: '1',
     additionalTerms: '',
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/landlord/lease-templates');
+      const result = await res.json();
+      if (result.success) {
+        setTemplates(result.data.filter((t: any) => t.isActive));
+      }
+    } catch {
+      console.error('Failed to fetch templates');
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  }, []);
 
   const fetchProperties = useCallback(async () => {
     setIsLoadingProperties(true);
@@ -106,45 +124,9 @@ export default function CreateLeasePage() {
   }, [toast]);
 
   useEffect(() => {
+    fetchTemplates();
     fetchProperties();
-  }, [fetchProperties]);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      setSelectedFile(file);
-    } else if (file) {
-      toast({ variant: 'destructive', title: 'Invalid file', description: 'Please select a PDF file' });
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile) return;
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('pdf', selectedFile);
-
-      const res = await fetch('/api/landlord/leases/upload-pdf', {
-        method: 'POST',
-        body: formData,
-      });
-      const result = await res.json();
-
-      if (result.success) {
-        setUploadedDocId(result.data.documentId);
-        setUploadedFileName(result.data.fileName);
-        toast({ title: 'PDF Uploaded', description: 'Your lease document has been uploaded.' });
-        setStep(3);
-      } else {
-        toast({ variant: 'destructive', title: 'Upload Failed', description: result.error });
-      }
-    } catch {
-      toast({ variant: 'destructive', title: 'Upload Failed', description: 'Failed to upload PDF' });
-    } finally {
-      setIsUploading(false);
-    }
-  };
+  }, [fetchTemplates, fetchProperties]);
 
   const handleUnitChange = (unitId: string) => {
     setSelectedUnitId(unitId);
@@ -194,8 +176,9 @@ export default function CreateLeasePage() {
           rentDueDay: parseInt(form.rentDueDay || '1'),
           petDeposit: form.petDeposit ? parseFloat(form.petDeposit) : null,
           petRent: form.petRent ? parseFloat(form.petRent) : null,
+          numOccupants: parseInt(form.numOccupants || '1'),
           additionalTerms: form.additionalTerms || null,
-          leaseDocumentId: uploadedDocId || null,
+          templateId: selectedTemplateId || null,
         }),
       });
 
@@ -229,154 +212,99 @@ export default function CreateLeasePage() {
         <div>
           <h1 className="text-3xl font-bold">Create Lease</h1>
           <p className="text-muted-foreground">
-            {step === 1 && 'Choose how to create your lease'}
-            {step === 2 && 'Upload your lease PDF'}
-            {step === 3 && 'Assign to a property and unit'}
-            {step === 4 && 'Review and edit lease details'}
+            {step === 1 && 'Select a lease template and assign to property'}
+            {step === 2 && 'Assign to a property and unit'}
+            {step === 3 && 'Review and set lease details'}
           </p>
         </div>
       </div>
 
       {/* Step indicators */}
       <div className="flex items-center gap-2">
-        {[1, 2, 3, 4].map((s) => {
-          if (method === 'manual' && s === 2) return null;
-          return (
-            <div key={s} className="flex items-center gap-2">
-              <div
-                className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step === s
-                    ? 'bg-primary text-primary-foreground'
-                    : step > s
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-muted text-muted-foreground'
-                }`}
-              >
-                {step > s ? <CheckCircle2 className="h-4 w-4" /> : s}
-              </div>
-              {s < 4 && !(method === 'manual' && s === 2) && (
-                <div className={`w-8 h-0.5 ${step > s ? 'bg-green-300' : 'bg-muted'}`} />
-              )}
+        {[1, 2, 3].map((s) => (
+          <div key={s} className="flex items-center gap-2">
+            <div
+              className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step === s
+                  ? 'bg-primary text-primary-foreground'
+                  : step > s
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {step > s ? <CheckCircle2 className="h-4 w-4" /> : s}
             </div>
-          );
-        })}
+            {s < 3 && (
+              <div className={`w-8 h-0.5 ${step > s ? 'bg-green-300' : 'bg-muted'}`} />
+            )}
+          </div>
+        ))}
       </div>
 
-      {/* Step 1: Choose method */}
+      {/* Step 1: Select template */}
       {step === 1 && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card
-            className={`cursor-pointer transition-all hover:border-primary ${
-              method === 'upload' ? 'border-primary ring-2 ring-primary/20' : ''
-            }`}
-            onClick={() => setMethod('upload')}
-          >
-            <CardHeader className="text-center">
-              <Upload className="h-12 w-12 mx-auto text-primary mb-2" />
-              <CardTitle>Upload PDF</CardTitle>
-              <CardDescription>
-                Upload an existing lease PDF. The tenant will review and sign it digitally.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card
-            className={`cursor-pointer transition-all hover:border-primary ${
-              method === 'manual' ? 'border-primary ring-2 ring-primary/20' : ''
-            }`}
-            onClick={() => setMethod('manual')}
-          >
-            <CardHeader className="text-center">
-              <FileText className="h-12 w-12 mx-auto text-primary mb-2" />
-              <CardTitle>Create Manually</CardTitle>
-              <CardDescription>
-                Fill in lease details from scratch. A digital lease will be generated automatically.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          {method && (
-            <div className="md:col-span-2 flex justify-end">
-              <Button onClick={() => setStep(method === 'upload' ? 2 : 3)}>
-                Continue
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Step 2: Upload PDF */}
-      {step === 2 && (
         <Card>
           <CardHeader>
-            <CardTitle>Upload Lease PDF</CardTitle>
+            <CardTitle>Choose a Lease Template</CardTitle>
             <CardDescription>
-              Upload the lease document. The tenant will be able to review it before signing.
+              Select a template for your lease agreement. The template text will auto-populate with
+              tenant and property data.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!selectedFile ? (
-              <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
-                <Upload className="h-10 w-10 text-muted-foreground mb-2" />
-                <span className="text-sm text-muted-foreground">Click to upload or drag and drop</span>
-                <span className="text-xs text-muted-foreground mt-1">PDF files only</span>
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
-              </label>
+            {isLoadingTemplates ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="text-center py-8">
+                <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground mb-4">
+                  No lease templates yet. Create one first.
+                </p>
+                <Link href="/landlord/leases/templates">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Template
+                  </Button>
+                </Link>
+              </div>
             ) : (
-              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-primary" />
-                  <div>
-                    <p className="font-medium">{selectedFile.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
-                    </p>
+              <div className="space-y-2">
+                {templates.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => setSelectedTemplateId(t.id)}
+                    className={`flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                      selectedTemplateId === t.id
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : 'hover:border-primary/50'
+                    }`}
+                  >
+                    <FileText className="h-5 w-5 text-primary shrink-0" />
+                    <div>
+                      <p className="font-medium">{t.name}</p>
+                      {t.description && (
+                        <p className="text-xs text-muted-foreground">{t.description}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setUploadedDocId(null);
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                ))}
               </div>
             )}
 
-            <div className="flex justify-between">
-              <Button variant="outline" onClick={() => setStep(1)}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
-              </Button>
-              <Button onClick={handleUpload} disabled={!selectedFile || isUploading}>
-                {isUploading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    Upload & Continue
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                )}
+            <div className="flex justify-end pt-4">
+              <Button onClick={() => setStep(2)} disabled={!selectedTemplateId}>
+                Continue
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Step 3: Assign property and unit */}
-      {step === 3 && (
+      {/* Step 2: Assign property and unit */}
+      {step === 2 && (
         <Card>
           <CardHeader>
             <CardTitle>Assign to Property</CardTitle>
@@ -385,18 +313,6 @@ export default function CreateLeasePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {uploadedDocId && (
-              <div className="p-4 rounded-lg bg-green-50 border border-green-200">
-                <div className="flex items-center gap-2 text-green-700 font-medium">
-                  <CheckCircle2 className="h-4 w-4" />
-                  PDF uploaded: {uploadedFileName}
-                </div>
-                <p className="text-sm text-green-600 mt-1">
-                  Tenants will review this document before signing.
-                </p>
-              </div>
-            )}
-
             {isLoadingProperties ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -462,11 +378,11 @@ export default function CreateLeasePage() {
             )}
 
             <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={() => setStep(method === 'upload' ? 2 : 1)}>
+              <Button variant="outline" onClick={() => setStep(1)}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
-              <Button onClick={() => setStep(4)} disabled={!selectedPropertyId || !selectedUnitId}>
+              <Button onClick={() => setStep(3)} disabled={!selectedPropertyId || !selectedUnitId}>
                 Continue
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -475,27 +391,25 @@ export default function CreateLeasePage() {
         </Card>
       )}
 
-      {/* Step 4: Review and edit lease details */}
-      {step === 4 && (
+      {/* Step 3: Lease details */}
+      {step === 3 && (
         <Card>
           <CardHeader>
-            <CardTitle>Review & Edit Lease Details</CardTitle>
+            <CardTitle>Lease Details</CardTitle>
             <CardDescription>
-              Fill in the lease terms. An invite will be sent to the tenant to review
-              {uploadedDocId ? ' the uploaded PDF and' : ''} sign.
+              Enter the lease terms. These values will auto-populate into your template.
+              An invite will be sent to the tenant to review and sign digitally.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Property/unit summary */}
             <div className="p-3 rounded-lg bg-muted text-sm">
-              <span className="font-medium">Assigning to: </span>
+              <span className="font-medium">Property: </span>
               {selectedProperty?.name} — Unit{' '}
               {selectedProperty?.units.find((u) => u.id === selectedUnitId)?.unitNumber}
-              {uploadedDocId && (
-                <span className="ml-2 text-green-600">
-                  <FileText className="h-3 w-3 inline" /> PDF attached
-                </span>
-              )}
+              <span className="ml-3 text-primary">
+                <FileText className="h-3 w-3 inline" /> {templates.find((t) => t.id === selectedTemplateId)?.name}
+              </span>
             </div>
 
             {/* Tenant Info */}
@@ -511,7 +425,7 @@ export default function CreateLeasePage() {
                   onChange={(e) => setForm({ ...form, tenantEmail: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  An invite will be sent to this email for the tenant to create an account and sign.
+                  An invite will be sent to this email for the tenant to create an account and sign digitally.
                 </p>
               </div>
             </div>
@@ -599,6 +513,16 @@ export default function CreateLeasePage() {
                     onChange={(e) => setForm({ ...form, lateFee: e.target.value })}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="numOccupants">Number of Occupants</Label>
+                  <Input
+                    id="numOccupants"
+                    type="number"
+                    min="1"
+                    value={form.numOccupants}
+                    onChange={(e) => setForm({ ...form, numOccupants: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
 
@@ -645,7 +569,7 @@ export default function CreateLeasePage() {
 
             {/* Actions */}
             <div className="flex justify-between pt-4 border-t">
-              <Button variant="outline" onClick={() => setStep(3)}>
+              <Button variant="outline" onClick={() => setStep(2)}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>

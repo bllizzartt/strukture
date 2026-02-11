@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import SignatureCanvas from 'react-signature-canvas';
@@ -16,6 +16,7 @@ import {
   FileText,
   Home,
   Clock,
+  Shield,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ interface LeaseData {
   petRent: string | number | null;
   additionalTerms: string | null;
   leaseDocumentId: string | null;
+  templateId: string | null;
   tenantSignedAt: string | null;
   landlordSignedAt: string | null;
   tenant: {
@@ -56,10 +58,14 @@ interface LeaseData {
     email: string;
     firstName: string;
     lastName: string;
+    phone: string | null;
+    dateOfBirth: string | null;
     status: string;
   };
   unit: {
     unitNumber: string;
+    bedrooms: number;
+    bathrooms: number;
     property: {
       name: string;
       addressLine1: string;
@@ -71,14 +77,73 @@ interface LeaseData {
         firstName: string;
         lastName: string;
         email: string;
+        phone: string | null;
       };
     };
   };
+  template?: {
+    id: string;
+    name: string;
+    content: string;
+  } | null;
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function populateTemplate(content: string, lease: LeaseData): string {
+  const monthlyRent = typeof lease.monthlyRent === 'string' ? parseFloat(lease.monthlyRent) : lease.monthlyRent;
+  const depositAmount = typeof lease.depositAmount === 'string' ? parseFloat(lease.depositAmount) : lease.depositAmount;
+  const lateFee = lease.lateFee ? (typeof lease.lateFee === 'string' ? parseFloat(lease.lateFee) : lease.lateFee) : 0;
+  const petDeposit = lease.petDeposit ? (typeof lease.petDeposit === 'string' ? parseFloat(lease.petDeposit) : lease.petDeposit) : 0;
+  const petRent = lease.petRent ? (typeof lease.petRent === 'string' ? parseFloat(lease.petRent) : lease.petRent) : 0;
+
+  const landlordName = `${lease.unit.property.owner.firstName} ${lease.unit.property.owner.lastName}`;
+  const tenantName = lease.tenant.firstName !== 'Pending'
+    ? `${lease.tenant.firstName} ${lease.tenant.lastName}`
+    : lease.tenant.email;
+  const propertyAddress = `${lease.unit.property.addressLine1}, ${lease.unit.property.city}, ${lease.unit.property.state} ${lease.unit.property.zipCode}`;
+
+  const replacements: Record<string, string> = {
+    '{{landlord_name}}': landlordName,
+    '{{landlord_email}}': lease.unit.property.owner.email,
+    '{{landlord_phone}}': lease.unit.property.owner.phone || 'N/A',
+    '{{tenant_name}}': tenantName,
+    '{{tenant_email}}': lease.tenant.email,
+    '{{tenant_phone}}': lease.tenant.phone || 'N/A',
+    '{{tenant_dob}}': lease.tenant.dateOfBirth
+      ? format(new Date(lease.tenant.dateOfBirth), 'MM/dd/yyyy')
+      : 'N/A',
+    '{{property_name}}': lease.unit.property.name,
+    '{{property_address}}': propertyAddress,
+    '{{unit_number}}': lease.unit.unitNumber,
+    '{{num_bedrooms}}': String(lease.unit.bedrooms),
+    '{{num_bathrooms}}': String(lease.unit.bathrooms),
+    '{{lease_start_date}}': format(new Date(lease.startDate), 'MM/dd/yyyy'),
+    '{{lease_end_date}}': format(new Date(lease.endDate), 'MM/dd/yyyy'),
+    '{{monthly_rent}}': formatCurrency(monthlyRent),
+    '{{deposit_amount}}': formatCurrency(depositAmount),
+    '{{rent_due_day}}': ordinal(lease.rentDueDay),
+    '{{grace_period_days}}': String(lease.gracePeriodDays),
+    '{{late_fee}}': lateFee ? formatCurrency(lateFee) : 'N/A',
+    '{{pet_deposit}}': petDeposit ? formatCurrency(petDeposit) : 'N/A',
+    '{{pet_rent}}': petRent ? formatCurrency(petRent) : 'N/A',
+    '{{today_date}}': format(new Date(), 'MM/dd/yyyy'),
+    '{{num_occupants}}': '1', // Default
+  };
+
+  let populated = content;
+  for (const [key, value] of Object.entries(replacements)) {
+    populated = populated.replaceAll(key, value);
+  }
+  return populated;
 }
 
 export default function LeaseSignPage() {
   const params = useParams();
-  const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const { toast } = useToast();
   const signatureRef = useRef<SignatureCanvas>(null);
@@ -86,7 +151,8 @@ export default function LeaseSignPage() {
   const [lease, setLease] = useState<LeaseData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigning, setIsSigning] = useState(false);
-  const [agreed, setAgreed] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [agreedToEsign, setAgreedToEsign] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [pdfData, setPdfData] = useState<LeaseDocumentData | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
@@ -100,7 +166,7 @@ export default function LeaseSignPage() {
       if (result.success) {
         setLease(result.data);
       }
-    } catch (error) {
+    } catch {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -115,6 +181,11 @@ export default function LeaseSignPage() {
     fetchLease();
   }, [fetchLease]);
 
+  const populatedContent = useMemo(() => {
+    if (!lease?.template?.content) return null;
+    return populateTemplate(lease.template.content, lease);
+  }, [lease]);
+
   const fetchPdfData = async () => {
     setIsLoadingPdf(true);
     try {
@@ -123,7 +194,7 @@ export default function LeaseSignPage() {
       if (result.success) {
         setPdfData(result.data);
       }
-    } catch (error) {
+    } catch {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to load PDF data' });
     } finally {
       setIsLoadingPdf(false);
@@ -140,8 +211,8 @@ export default function LeaseSignPage() {
   };
 
   const handleSign = async () => {
-    if (!agreed) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Please agree to the lease terms' });
+    if (!agreedToTerms || !agreedToEsign) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please agree to both consent checkboxes' });
       return;
     }
     if (!hasSignature || signatureRef.current?.isEmpty()) {
@@ -151,21 +222,24 @@ export default function LeaseSignPage() {
 
     setIsSigning(true);
     try {
+      const signerName = session?.user?.name || session?.user?.email || '';
+      const consentText = `I, ${signerName}, hereby consent to sign this Residential Lease Agreement electronically. I acknowledge that my electronic signature is legally binding under the Electronic Signatures in Global and National Commerce Act (ESIGN Act, 15 U.S.C. §§ 7001-7006) and the New Mexico Uniform Electronic Transactions Act (NMSA 1978, §§ 14-16-1 to 14-16-21). I have read and agree to all terms and conditions of this lease agreement. Signed on ${new Date().toISOString()}.`;
+
       const signature = signatureRef.current?.toDataURL('image/png') || '';
       const response = await fetch(`/api/lease/${leaseId}/sign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signature }),
+        body: JSON.stringify({ signature, consentText }),
       });
 
       const result = await response.json();
       if (result.success) {
         toast({ title: 'Lease Signed', description: result.message });
-        fetchLease(); // Refresh to show updated status
+        fetchLease();
       } else {
         toast({ variant: 'destructive', title: 'Error', description: result.error });
       }
-    } catch (error) {
+    } catch {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to sign lease' });
     } finally {
       setIsSigning(false);
@@ -206,7 +280,6 @@ export default function LeaseSignPage() {
     );
   }
 
-  // Check if user needs to log in or register
   const needsAuth = sessionStatus !== 'authenticated';
   const isCurrentUserTenant = session?.user?.id === lease.tenant.id || session?.user?.email === lease.tenant.email;
   const isCurrentUserLandlord = session?.user?.email === lease.unit.property.owner.email;
@@ -282,8 +355,31 @@ export default function LeaseSignPage() {
             </div>
           )}
 
-          {/* Uploaded Lease PDF Viewer */}
-          {lease.leaseDocumentId && (
+          {/* Digital Lease Document (Template-based) */}
+          {populatedContent && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Lease Document
+                </CardTitle>
+                <CardDescription>
+                  Review the full lease agreement below before signing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-white border rounded-lg p-6 md:p-8 font-serif text-sm leading-relaxed whitespace-pre-wrap max-h-[600px] overflow-y-auto">
+                  {populatedContent}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Scroll through the document above to review all terms before signing below.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Fallback: Uploaded Lease PDF Viewer (for legacy leases without templates) */}
+          {!populatedContent && lease.leaseDocumentId && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -321,166 +417,207 @@ export default function LeaseSignPage() {
             </Card>
           )}
 
-          {/* Parties */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                Parties
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div>
-                <p className="text-sm text-muted-foreground">Landlord</p>
-                <p className="font-medium">{landlordName}</p>
-                <p className="text-sm text-muted-foreground">{lease.unit.property.owner.email}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Tenant</p>
-                <p className="font-medium">
-                  {lease.tenant.firstName !== 'Pending' ? `${lease.tenant.firstName} ${lease.tenant.lastName}` : lease.tenant.email}
-                </p>
-                <p className="text-sm text-muted-foreground">{lease.tenant.email}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Property */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Home className="h-5 w-5 text-primary" />
-                Property
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm text-muted-foreground">Property</p>
-                  <p className="font-medium">{lease.unit.property.name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Unit</p>
-                  <p className="font-medium">{lease.unit.unitNumber}</p>
-                </div>
-                <div className="md:col-span-2">
-                  <p className="text-sm text-muted-foreground">Address</p>
-                  <p className="font-medium">{propertyAddress}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Lease Terms */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-primary" />
-                Lease Terms
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Start Date</p>
-                  <p className="font-medium">{format(new Date(lease.startDate), 'MMMM d, yyyy')}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">End Date</p>
-                  <p className="font-medium">{format(new Date(lease.endDate), 'MMMM d, yyyy')}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Rent Due Day</p>
-                  <p className="font-medium">{lease.rentDueDay}st of each month</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Financial */}
-          <Card className="bg-primary/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-primary" />
-                Financial Terms
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Monthly Rent</p>
-                  <p className="text-lg font-semibold">{formatCurrency(monthlyRent)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Security Deposit</p>
-                  <p className="text-lg font-semibold">{formatCurrency(depositAmount)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Grace Period</p>
-                  <p className="font-medium">{lease.gracePeriodDays} days</p>
-                </div>
-                {lease.lateFee && (
+          {/* Summary Cards (shown when no template or as supplementary info) */}
+          {!populatedContent && (
+            <>
+              {/* Parties */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-primary" />
+                    Parties
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <p className="text-sm text-muted-foreground">Late Fee</p>
+                    <p className="text-sm text-muted-foreground">Landlord</p>
+                    <p className="font-medium">{landlordName}</p>
+                    <p className="text-sm text-muted-foreground">{lease.unit.property.owner.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tenant</p>
                     <p className="font-medium">
-                      {formatCurrency(typeof lease.lateFee === 'string' ? parseFloat(lease.lateFee) : lease.lateFee)}
+                      {lease.tenant.firstName !== 'Pending' ? `${lease.tenant.firstName} ${lease.tenant.lastName}` : lease.tenant.email}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{lease.tenant.email}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Property */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Home className="h-5 w-5 text-primary" />
+                    Property
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Property</p>
+                      <p className="font-medium">{lease.unit.property.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Unit</p>
+                      <p className="font-medium">{lease.unit.unitNumber}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <p className="text-sm text-muted-foreground">Address</p>
+                      <p className="font-medium">{propertyAddress}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Lease Terms */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-primary" />
+                    Lease Terms
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Start Date</p>
+                      <p className="font-medium">{format(new Date(lease.startDate), 'MMMM d, yyyy')}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">End Date</p>
+                      <p className="font-medium">{format(new Date(lease.endDate), 'MMMM d, yyyy')}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Rent Due Day</p>
+                      <p className="font-medium">{ordinal(lease.rentDueDay)} of each month</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Financial */}
+              <Card className="bg-primary/5">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-primary" />
+                    Financial Terms
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Monthly Rent</p>
+                      <p className="text-lg font-semibold">{formatCurrency(monthlyRent)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Security Deposit</p>
+                      <p className="text-lg font-semibold">{formatCurrency(depositAmount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Grace Period</p>
+                      <p className="font-medium">{lease.gracePeriodDays} days</p>
+                    </div>
+                    {lease.lateFee && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Late Fee</p>
+                        <p className="font-medium">
+                          {formatCurrency(typeof lease.lateFee === 'string' ? parseFloat(lease.lateFee) : lease.lateFee)}
+                        </p>
+                      </div>
+                    )}
+                    {lease.petDeposit && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Pet Deposit</p>
+                        <p className="font-medium">
+                          {formatCurrency(typeof lease.petDeposit === 'string' ? parseFloat(lease.petDeposit) : lease.petDeposit)}
+                        </p>
+                      </div>
+                    )}
+                    {lease.petRent && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Pet Rent</p>
+                        <p className="font-medium">
+                          {formatCurrency(typeof lease.petRent === 'string' ? parseFloat(lease.petRent) : lease.petRent)}/mo
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="flex justify-between items-center">
+                      <p className="font-medium">Due at Signing</p>
+                      <p className="text-xl font-bold text-primary">
+                        {formatCurrency(monthlyRent + depositAmount)}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      First month&apos;s rent + security deposit
                     </p>
                   </div>
-                )}
-                {lease.petDeposit && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Pet Deposit</p>
-                    <p className="font-medium">
-                      {formatCurrency(typeof lease.petDeposit === 'string' ? parseFloat(lease.petDeposit) : lease.petDeposit)}
-                    </p>
-                  </div>
-                )}
-                {lease.petRent && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Pet Rent</p>
-                    <p className="font-medium">
-                      {formatCurrency(typeof lease.petRent === 'string' ? parseFloat(lease.petRent) : lease.petRent)}/mo
-                    </p>
-                  </div>
-                )}
-              </div>
+                </CardContent>
+              </Card>
 
-              <div className="mt-4 pt-4 border-t">
-                <div className="flex justify-between items-center">
-                  <p className="font-medium">Due at Signing</p>
-                  <p className="text-xl font-bold text-primary">
-                    {formatCurrency(monthlyRent + depositAmount)}
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  First month&apos;s rent + security deposit
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              {/* Standard Terms */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>General Terms</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <p>a) Tenant shall use the premises solely for residential purposes and shall not engage in any unlawful activities on the property.</p>
+                  <p>b) Tenant shall maintain the premises in a clean and sanitary condition and shall not make any alterations without the prior written consent of Landlord.</p>
+                  <p>c) Tenant shall not assign this lease or sublet the premises without the prior written consent of Landlord.</p>
+                  <p>d) Landlord shall maintain the structural components of the building, including plumbing, electrical, and HVAC systems, in good working order.</p>
+                  <p>e) Either party may terminate this lease with 30 days written notice prior to the end of the lease term or any renewal period.</p>
+                </CardContent>
+              </Card>
 
-          {/* Standard Terms */}
-          <Card>
-            <CardHeader>
-              <CardTitle>General Terms</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <p>a) Tenant shall use the premises solely for residential purposes and shall not engage in any unlawful activities on the property.</p>
-              <p>b) Tenant shall maintain the premises in a clean and sanitary condition and shall not make any alterations without the prior written consent of Landlord.</p>
-              <p>c) Tenant shall not assign this lease or sublet the premises without the prior written consent of Landlord.</p>
-              <p>d) Landlord shall maintain the structural components of the building, including plumbing, electrical, and HVAC systems, in good working order.</p>
-              <p>e) Either party may terminate this lease with 30 days written notice prior to the end of the lease term or any renewal period.</p>
-            </CardContent>
-          </Card>
+              {/* Additional Terms */}
+              {lease.additionalTerms && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Additional Terms</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm whitespace-pre-wrap">{lease.additionalTerms}</p>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
 
-          {/* Additional Terms */}
-          {lease.additionalTerms && (
-            <Card>
+          {/* Quick Reference (shown alongside template document) */}
+          {populatedContent && (
+            <Card className="bg-primary/5">
               <CardHeader>
-                <CardTitle>Additional Terms</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-primary" />
+                  Financial Summary
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm whitespace-pre-wrap">{lease.additionalTerms}</p>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Monthly Rent</p>
+                    <p className="text-lg font-semibold">{formatCurrency(monthlyRent)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Security Deposit</p>
+                    <p className="text-lg font-semibold">{formatCurrency(depositAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Lease Period</p>
+                    <p className="font-medium text-sm">
+                      {format(new Date(lease.startDate), 'MMM d, yyyy')} - {format(new Date(lease.endDate), 'MMM d, yyyy')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Due at Signing</p>
+                    <p className="text-lg font-bold text-primary">
+                      {formatCurrency(monthlyRent + depositAmount)}
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -498,7 +635,7 @@ export default function LeaseSignPage() {
                   {lease.landlordSignedAt ? (
                     <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
                       <Check className="h-4 w-4" />
-                      Signed on {format(new Date(lease.landlordSignedAt), 'MMM d, yyyy')}
+                      Signed on {format(new Date(lease.landlordSignedAt), 'MMM d, yyyy \'at\' h:mm a')}
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground mt-2">Pending signature</p>
@@ -512,7 +649,7 @@ export default function LeaseSignPage() {
                   {lease.tenantSignedAt ? (
                     <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
                       <Check className="h-4 w-4" />
-                      Signed on {format(new Date(lease.tenantSignedAt), 'MMM d, yyyy')}
+                      Signed on {format(new Date(lease.tenantSignedAt), 'MMM d, yyyy \'at\' h:mm a')}
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground mt-2">Pending signature</p>
@@ -550,23 +687,64 @@ export default function LeaseSignPage() {
           {/* Sign Section */}
           {canSign && !alreadySigned && !leaseFullySigned && (
             <>
-              {/* Terms Agreement */}
-              <Card>
+              {/* Legal Compliance Notice */}
+              <Card className="border-blue-200 bg-blue-50/50">
                 <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-2">
+                      <p className="font-medium text-blue-900">Electronic Signature Legal Notice</p>
+                      <p className="text-sm text-blue-800">
+                        Your electronic signature on this document is legally binding under:
+                      </p>
+                      <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
+                        <li>The federal Electronic Signatures in Global and National Commerce Act (ESIGN Act, 15 U.S.C. &sect;&sect; 7001-7006)</li>
+                        <li>The New Mexico Uniform Electronic Transactions Act (NMSA 1978, &sect;&sect; 14-16-1 to 14-16-21)</li>
+                      </ul>
+                      <p className="text-xs text-blue-700">
+                        A complete audit trail including your IP address, timestamp, user agent, and consent record will be securely stored for legal compliance.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Consent Checkboxes */}
+              <Card>
+                <CardContent className="pt-6 space-y-4">
                   <div className="flex items-start space-x-3">
                     <Checkbox
                       id="terms"
-                      checked={agreed}
-                      onCheckedChange={(checked) => setAgreed(checked as boolean)}
+                      checked={agreedToTerms}
+                      onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
                     />
                     <div className="space-y-1">
                       <label htmlFor="terms" className="text-sm font-medium leading-none cursor-pointer">
-                        I agree to the lease terms and conditions
+                        I have read and agree to all terms and conditions of this lease agreement
                       </label>
                       <p className="text-xs text-muted-foreground">
-                        By checking this box, I acknowledge that I have read and agree to all terms outlined
-                        in this lease agreement. I understand that my electronic signature is legally binding
-                        under the ESIGN Act and UETA.
+                        By checking this box, I confirm that I have carefully reviewed the entire lease agreement above
+                        and agree to be bound by all of its terms and conditions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <Checkbox
+                      id="esign"
+                      checked={agreedToEsign}
+                      onCheckedChange={(checked) => setAgreedToEsign(checked as boolean)}
+                    />
+                    <div className="space-y-1">
+                      <label htmlFor="esign" className="text-sm font-medium leading-none cursor-pointer">
+                        I consent to sign this lease electronically
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        I acknowledge that my electronic signature below has the same legal force and effect as a
+                        handwritten signature under the ESIGN Act (15 U.S.C. &sect;&sect; 7001-7006) and the New Mexico
+                        Uniform Electronic Transactions Act (NMSA 1978, &sect;&sect; 14-16-1 to 14-16-21). I consent
+                        to conduct this transaction electronically and have received a copy of this agreement
+                        in electronic form.
                       </p>
                     </div>
                   </div>
@@ -596,7 +774,7 @@ export default function LeaseSignPage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Sign above using your mouse or touch screen.
+                    Sign above using your mouse or touch screen. Your signature image will be recorded along with your IP address and timestamp.
                   </p>
                 </CardContent>
               </Card>
@@ -606,7 +784,7 @@ export default function LeaseSignPage() {
                 <Button
                   size="lg"
                   onClick={handleSign}
-                  disabled={isSigning || !agreed || !hasSignature}
+                  disabled={isSigning || !agreedToTerms || !agreedToEsign || !hasSignature}
                 >
                   {isSigning ? (
                     <>
