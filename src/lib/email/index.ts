@@ -1272,3 +1272,139 @@ export async function sendViewingRequestEmail(
     return false;
   }
 }
+
+// ==================== Vendor Dispatch ====================
+
+interface VendorDispatchData {
+  vendorName: string;
+  requestTitle: string;
+  category: string;
+  priority: string;
+  description: string;
+  tenantName: string;
+  propertyName: string;
+  propertyAddress?: string;
+  unitNumber: string;
+  entryPermission: boolean;
+  preferredTimes?: string | null;
+  landlordName: string;
+  landlordPhone?: string | null;
+  landlordEmail: string;
+  requestId: string;
+  hasPhotos: boolean;
+}
+
+/**
+ * Send maintenance dispatch email to a vendor
+ */
+export async function sendVendorDispatchEmail(
+  to: string,
+  data: VendorDispatchData
+): Promise<{ success: boolean; error?: string }> {
+  const resend = getResend();
+  if (!resend) return { success: false, error: 'Email not configured' };
+
+  const priorityClass = data.priority === 'EMERGENCY' || data.priority === 'HIGH' ? 'urgent' : '';
+
+  const content = `
+    <h2>Maintenance Service Request</h2>
+    <p>Dear ${data.vendorName},</p>
+    <p>You have been assigned a new maintenance request from <strong>${data.landlordName}</strong>.</p>
+
+    <div class="info-box ${priorityClass}">
+      <div class="info-row">
+        <span class="label">Issue:</span>
+        <span class="value"><strong>${data.requestTitle}</strong></span>
+      </div>
+      <div class="info-row">
+        <span class="label">Category:</span>
+        <span class="value">${data.category}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Priority:</span>
+        <span class="value">${data.priority}</span>
+      </div>
+    </div>
+
+    <h3>Issue Description</h3>
+    <div class="info-box">
+      <p>${data.description}</p>
+    </div>
+
+    ${data.hasPhotos ? '<p><em>Photos of the issue have been uploaded. Please contact the property manager for access.</em></p>' : ''}
+
+    <h3>Location</h3>
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Property:</span>
+        <span class="value">${data.propertyName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Unit:</span>
+        <span class="value">${data.unitNumber}</span>
+      </div>
+      ${data.propertyAddress ? `
+      <div class="info-row">
+        <span class="label">Address:</span>
+        <span class="value">${data.propertyAddress}</span>
+      </div>
+      ` : ''}
+      <div class="info-row">
+        <span class="label">Tenant:</span>
+        <span class="value">${data.tenantName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Entry Permission:</span>
+        <span class="value">${data.entryPermission ? 'Yes - may enter without tenant present' : 'No - must coordinate with tenant'}</span>
+      </div>
+      ${data.preferredTimes ? `
+      <div class="info-row">
+        <span class="label">Preferred Times:</span>
+        <span class="value">${data.preferredTimes}</span>
+      </div>
+      ` : ''}
+    </div>
+
+    <h3>Property Manager Contact</h3>
+    <div class="info-box">
+      <div class="info-row">
+        <span class="label">Name:</span>
+        <span class="value">${data.landlordName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Email:</span>
+        <span class="value">${data.landlordEmail}</span>
+      </div>
+      ${data.landlordPhone ? `
+      <div class="info-row">
+        <span class="label">Phone:</span>
+        <span class="value">${data.landlordPhone}</span>
+      </div>
+      ` : ''}
+    </div>
+
+    ${data.priority === 'EMERGENCY' ? '<p><strong>This is an EMERGENCY request. Please respond as soon as possible.</strong></p>' : ''}
+
+    <a href="mailto:${data.landlordEmail}?subject=Re: Maintenance Request - ${encodeURIComponent(data.requestTitle)}" class="button">Reply to Property Manager</a>
+
+    <p>Please coordinate with the property manager to schedule the service visit.</p>
+  `;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: `${data.priority === 'EMERGENCY' ? 'URGENT: ' : ''}Service Request - ${data.requestTitle} (${data.propertyName} Unit ${data.unitNumber})`,
+      html: baseTemplate(content),
+    });
+
+    if (error) {
+      console.error('Failed to send vendor dispatch email:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to send vendor dispatch email:', error);
+    return { success: false, error: 'Email send failed' };
+  }
+}

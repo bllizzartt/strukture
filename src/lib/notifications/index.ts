@@ -88,6 +88,54 @@ export async function notifyMaintenanceSubmitted(
     message: `${data.tenantName} submitted a ${data.priority.toLowerCase()} priority maintenance request: ${data.title}`,
     link: `/landlord/maintenance/${data.requestId}`,
   });
+
+  // 4. Auto-dispatch to matched vendor
+  try {
+    const matchedVendors = await prisma.vendor.findMany({
+      where: {
+        ownerId: data.landlordId,
+        isActive: true,
+        categories: { has: data.category as any },
+      },
+    });
+
+    const landlord = await prisma.user.findUnique({
+      where: { id: data.landlordId },
+      select: { firstName: true, lastName: true, phone: true, email: true },
+    });
+
+    for (const vendor of matchedVendors) {
+      await emailService.sendVendorDispatchEmail(vendor.email, {
+        vendorName: vendor.name,
+        requestTitle: data.title,
+        category: formatLabel(data.category),
+        priority: formatLabel(data.priority),
+        description: data.description,
+        tenantName: data.tenantName,
+        propertyName: data.propertyName,
+        unitNumber: data.unitNumber,
+        entryPermission: data.entryPermission,
+        landlordName: landlord ? `${landlord.firstName} ${landlord.lastName}` : data.landlordName,
+        landlordPhone: landlord?.phone,
+        landlordEmail: landlord?.email || data.landlordEmail,
+        requestId: data.requestId,
+        hasPhotos: (data.photoUrls?.length ?? 0) > 0,
+      });
+    }
+
+    if (matchedVendors.length > 0) {
+      // Notify landlord that vendors were contacted
+      await createInAppNotification({
+        userId: data.landlordId,
+        type: 'MAINTENANCE_SUBMITTED',
+        title: 'Vendor Notified',
+        message: `${matchedVendors.map(v => v.name).join(', ')} ${matchedVendors.length === 1 ? 'has' : 'have'} been notified about: ${data.title}`,
+        link: `/landlord/maintenance/${data.requestId}`,
+      });
+    }
+  } catch (vendorError) {
+    console.error('Failed to dispatch to vendors:', vendorError);
+  }
 }
 
 export interface MaintenanceUpdateNotificationData {

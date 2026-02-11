@@ -17,10 +17,41 @@ import {
   BellOff,
   Unplug,
   Smartphone,
+  Wrench,
+  Plus,
+  Trash2,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+
+const MAINTENANCE_CATEGORIES = [
+  { value: 'PLUMBING', label: 'Plumbing' },
+  { value: 'ELECTRICAL', label: 'Electrical' },
+  { value: 'HVAC', label: 'HVAC' },
+  { value: 'APPLIANCE', label: 'Appliance' },
+  { value: 'STRUCTURAL', label: 'Structural' },
+  { value: 'PEST_CONTROL', label: 'Pest Control' },
+  { value: 'LANDSCAPING', label: 'Landscaping' },
+  { value: 'CLEANING', label: 'Cleaning' },
+  { value: 'SECURITY', label: 'Security' },
+  { value: 'OTHER', label: 'Other' },
+] as const;
+
+interface Vendor {
+  id: string;
+  name: string;
+  companyName: string | null;
+  email: string;
+  phone: string | null;
+  categories: string[];
+  isActive: boolean;
+  notes: string | null;
+}
 
 interface TelegramStatus {
   connected: boolean;
@@ -48,6 +79,23 @@ export default function SettingsPage() {
   const [verificationCode, setVerificationCode] = useState('');
   const [codeCopied, setCodeCopied] = useState(false);
 
+  // Vendor state
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [showAddVendor, setShowAddVendor] = useState(false);
+  const [vendorForm, setVendorForm] = useState({ name: '', companyName: '', email: '', phone: '', categories: [] as string[], notes: '' });
+  const [isSavingVendor, setIsSavingVendor] = useState(false);
+  const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
+
+  const fetchVendors = useCallback(async () => {
+    try {
+      const response = await fetch('/api/landlord/vendors');
+      const result = await response.json();
+      if (result.success) setVendors(result.data);
+    } catch {
+      // Silent fail
+    }
+  }, []);
+
   const fetchStatus = useCallback(async () => {
     try {
       const response = await fetch('/api/landlord/settings/telegram');
@@ -64,8 +112,62 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchStatus();
+    fetchVendors();
     setVerificationCode(generateVerificationCode());
-  }, [fetchStatus]);
+  }, [fetchStatus, fetchVendors]);
+
+  const toggleCategory = (cat: string) => {
+    setVendorForm(prev => ({
+      ...prev,
+      categories: prev.categories.includes(cat)
+        ? prev.categories.filter(c => c !== cat)
+        : [...prev.categories, cat],
+    }));
+  };
+
+  const saveVendor = async () => {
+    if (!vendorForm.name || !vendorForm.email || vendorForm.categories.length === 0) {
+      toast({ title: 'Missing fields', description: 'Name, email, and at least one category are required', variant: 'destructive' });
+      return;
+    }
+    setIsSavingVendor(true);
+    try {
+      const response = await fetch('/api/landlord/vendors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vendorForm),
+      });
+      const result = await response.json();
+      if (result.success) {
+        setVendors(prev => [result.data, ...prev]);
+        setVendorForm({ name: '', companyName: '', email: '', phone: '', categories: [], notes: '' });
+        setShowAddVendor(false);
+        toast({ title: 'Vendor added', description: `${vendorForm.name} will be auto-notified for matching requests.` });
+      } else {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to save vendor', variant: 'destructive' });
+    } finally {
+      setIsSavingVendor(false);
+    }
+  };
+
+  const deleteVendor = async (id: string) => {
+    setDeletingVendorId(id);
+    try {
+      const response = await fetch(`/api/landlord/vendors?id=${id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (result.success) {
+        setVendors(prev => prev.filter(v => v.id !== id));
+        toast({ title: 'Vendor removed' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to delete vendor', variant: 'destructive' });
+    } finally {
+      setDeletingVendorId(null);
+    }
+  };
 
   const copyCode = async () => {
     try {
@@ -386,6 +488,157 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Vendor Management Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10">
+                <Wrench className="h-5 w-5 text-orange-500" />
+              </div>
+              <div>
+                <CardTitle>Preferred Vendors</CardTitle>
+                <CardDescription>
+                  Vendors are automatically emailed when a matching maintenance request is submitted.
+                </CardDescription>
+              </div>
+            </div>
+            {!showAddVendor && (
+              <Button size="sm" onClick={() => setShowAddVendor(true)} className="gap-1">
+                <Plus className="h-4 w-4" /> Add Vendor
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Add Vendor Form */}
+          {showAddVendor && (
+            <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Contact Name *</Label>
+                  <Input
+                    placeholder="e.g., Joe Smith"
+                    value={vendorForm.name}
+                    onChange={e => setVendorForm(prev => ({ ...prev, name: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Company Name</Label>
+                  <Input
+                    placeholder="e.g., Joe's Plumbing"
+                    value={vendorForm.companyName}
+                    onChange={e => setVendorForm(prev => ({ ...prev, companyName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email *</Label>
+                  <Input
+                    type="email"
+                    placeholder="vendor@email.com"
+                    value={vendorForm.email}
+                    onChange={e => setVendorForm(prev => ({ ...prev, email: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Phone</Label>
+                  <Input
+                    placeholder="(555) 123-4567"
+                    value={vendorForm.phone}
+                    onChange={e => setVendorForm(prev => ({ ...prev, phone: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Categories they handle *</Label>
+                <div className="flex flex-wrap gap-2">
+                  {MAINTENANCE_CATEGORIES.map(cat => (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      onClick={() => toggleCategory(cat.value)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                        vendorForm.categories.includes(cat.value)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background text-muted-foreground border-border hover:border-primary/50'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={saveVendor} disabled={isSavingVendor} size="sm">
+                  {isSavingVendor && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                  Save Vendor
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setShowAddVendor(false); setVendorForm({ name: '', companyName: '', email: '', phone: '', categories: [], notes: '' }); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Vendor List */}
+          {vendors.length === 0 && !showAddVendor ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Wrench className="h-10 w-10 mx-auto mb-3 opacity-50" />
+              <p className="font-medium">No vendors added yet</p>
+              <p className="text-sm">Add your preferred plumbers, electricians, and other vendors.</p>
+              <p className="text-sm mt-1">They&apos;ll be automatically emailed when a tenant submits a matching request.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {vendors.map(vendor => (
+                <div key={vendor.id} className="flex items-start justify-between rounded-lg border p-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{vendor.name}</p>
+                      {vendor.companyName && (
+                        <span className="text-sm text-muted-foreground">({vendor.companyName})</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {vendor.email}
+                      </span>
+                      {vendor.phone && (
+                        <span className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" />
+                          {vendor.phone}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {vendor.categories.map(cat => (
+                        <span key={cat} className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                          {MAINTENANCE_CATEGORIES.find(c => c.value === cat)?.label || cat}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deleteVendor(vendor.id)}
+                    disabled={deletingVendorId === vendor.id}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    {deletingVendorId === vendor.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
