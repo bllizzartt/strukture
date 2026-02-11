@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { encrypt } from '@/lib/encryption';
 
+// Allow large file uploads (up to 25MB) for application documents
+export const maxDuration = 60; // seconds
+export const dynamic = 'force-dynamic';
+
 // GET /api/applications/[propertyId] - Get property info for application (public)
 export async function GET(
   request: NextRequest,
@@ -323,8 +327,9 @@ export async function POST(
     );
   } catch (error) {
     console.error('Error submitting application:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { success: false, error: 'Failed to submit application' },
+      { success: false, error: `Failed to submit application: ${message}` },
       { status: 500 }
     );
   }
