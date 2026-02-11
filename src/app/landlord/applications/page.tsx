@@ -54,8 +54,8 @@ interface Application {
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   PENDING_PAYMENT: {
-    label: 'Pending Payment',
-    color: 'bg-orange-100 text-orange-800',
+    label: 'Submitted',
+    color: 'bg-blue-100 text-blue-800',
     icon: <Clock className="h-3.5 w-3.5" />,
   },
   SUBMITTED: {
@@ -231,7 +231,7 @@ export default function ApplicationsListPage() {
         <div className="space-y-3">
           {filtered.map((app) => {
             const status = statusConfig[app.status] || statusConfig.SUBMITTED;
-            const isActionable = app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
+            const isActionable = app.status === 'PENDING_PAYMENT' || app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW';
             const isUpdating = updatingId === app.id;
             return (
               <Card key={app.id} className="hover:shadow-md transition-shadow">

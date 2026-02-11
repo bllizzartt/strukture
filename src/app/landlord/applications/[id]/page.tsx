@@ -106,6 +106,7 @@ interface ApplicationDetail {
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  PENDING_PAYMENT: { label: 'Submitted', color: 'bg-blue-100 text-blue-800', icon: <Clock className="h-4 w-4" /> },
   SUBMITTED: { label: 'Submitted', color: 'bg-blue-100 text-blue-800', icon: <Clock className="h-4 w-4" /> },
   UNDER_REVIEW: { label: 'Under Review', color: 'bg-yellow-100 text-yellow-800', icon: <Eye className="h-4 w-4" /> },
   APPROVED: { label: 'Approved', color: 'bg-green-100 text-green-800', icon: <CheckCircle2 className="h-4 w-4" /> },
@@ -246,7 +247,7 @@ export default function ApplicationDetailPage() {
         </div>
 
         {/* Action Buttons */}
-        {(app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW') && (
+        {(app.status === 'PENDING_PAYMENT' || app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW') && (
           <div className="flex gap-2">
             {app.status === 'SUBMITTED' && (
               <Button variant="outline" onClick={() => updateStatus('UNDER_REVIEW')} disabled={isUpdating}>
