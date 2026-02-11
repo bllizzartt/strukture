@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { sendApplicationApprovedEmail, sendApplicationDeniedEmail } from '@/lib/email';
+import * as telegramService from '@/lib/telegram';
 
 // GET /api/landlord/applications/[id] - Get application details
 export async function GET(
@@ -181,6 +182,33 @@ export async function PATCH(
       if (!emailResult.success) {
         console.error(`Failed to send ${status} email to ${fullApplication.email}:`, emailResult.error);
       }
+
+      // Telegram notification to landlord (confirmation)
+      const landlord = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { telegramChatId: true, telegramNotifications: true },
+      });
+      if (landlord?.telegramNotifications && landlord.telegramChatId) {
+        const action = status === 'APPROVED' ? '✅ Approved' : '❌ Denied';
+        await telegramService.sendNotification(
+          landlord.telegramChatId,
+          `Application ${action}`,
+          `${emailData.applicantName}'s application for ${emailData.propertyName}${emailData.unitNumber ? ` Unit ${emailData.unitNumber}` : ''} has been ${action.toLowerCase()}.`
+        );
+      }
+
+      // In-app notification for landlord (action confirmation)
+      await prisma.notification.create({
+        data: {
+          userId: session.user.id,
+          type: 'IN_APP',
+          category: 'GENERAL',
+          title: `Application ${status === 'APPROVED' ? 'Approved' : 'Denied'}`,
+          message: `You ${status === 'APPROVED' ? 'approved' : 'denied'} ${emailData.applicantName}'s application for ${emailData.propertyName}.`,
+          actionUrl: `/landlord/applications/${id}`,
+          sentAt: new Date(),
+        },
+      });
     }
 
     return NextResponse.json({

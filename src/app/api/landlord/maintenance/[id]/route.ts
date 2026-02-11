@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/config';
 import { prisma } from '@/lib/db';
 import { updateMaintenanceRequestSchema, addMaintenanceUpdateSchema } from '@/lib/validators/maintenance';
+import { notifyMaintenanceUpdate } from '@/lib/notifications';
 
 // GET /api/landlord/maintenance/[id] - Get a specific maintenance request
 export async function GET(
@@ -214,7 +215,24 @@ export async function PUT(
       return updated;
     });
 
-    // TODO: Send notification to tenant about status update
+    // Notify tenant about status update (Email + In-app)
+    if (statusChanged && maintenanceRequest.tenant) {
+      try {
+        await notifyMaintenanceUpdate({
+          requestId: id,
+          title: maintenanceRequest.title,
+          newStatus: data.status!,
+          scheduledDate: data.scheduledDate,
+          tenantId: maintenanceRequest.tenant.id,
+          tenantName: `${maintenanceRequest.tenant.firstName} ${maintenanceRequest.tenant.lastName}`,
+          tenantEmail: maintenanceRequest.tenant.email,
+          propertyName: maintenanceRequest.unit.property.name,
+          unitNumber: maintenanceRequest.unit.unitNumber,
+        });
+      } catch (error) {
+        console.error('Failed to send maintenance update notification:', error);
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -250,6 +268,9 @@ export async function POST(
     const existingRequest = await prisma.maintenanceRequest.findUnique({
       where: { id },
       include: {
+        tenant: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
         unit: {
           include: {
             property: true,
@@ -320,7 +341,24 @@ export async function POST(
       return newUpdate;
     });
 
-    // TODO: Send notification to tenant
+    // Notify tenant about the update (Email + In-app) if status changed and update is public
+    if (data.newStatus && data.newStatus !== existingRequest.status && data.isPublic && existingRequest.tenant) {
+      try {
+        await notifyMaintenanceUpdate({
+          requestId: id,
+          title: existingRequest.title,
+          newStatus: data.newStatus,
+          message: data.message,
+          tenantId: existingRequest.tenant.id,
+          tenantName: `${existingRequest.tenant.firstName} ${existingRequest.tenant.lastName}`,
+          tenantEmail: existingRequest.tenant.email,
+          propertyName: existingRequest.unit.property.name,
+          unitNumber: existingRequest.unit.unitNumber,
+        });
+      } catch (error) {
+        console.error('Failed to send maintenance update notification:', error);
+      }
+    }
 
     return NextResponse.json(
       {

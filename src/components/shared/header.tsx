@@ -1,7 +1,6 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { signOut } from 'next-auth/react';
+import { NotificationCenter } from '@/components/shared/notification-center';
 
 export function Header() {
   const { data: session } = useSession();
@@ -31,10 +31,7 @@ export function Header() {
       <div className="flex-1" />
 
       {/* Notifications */}
-      <Button variant="ghost" size="icon" className="relative">
-        <Bell className="h-5 w-5" />
-        <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-destructive" />
-      </Button>
+      <NotificationCenter />
 
       {/* User menu */}
       <DropdownMenu>
